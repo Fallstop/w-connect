@@ -93,7 +93,7 @@ jobs:
       - name: Verify and collect checksums
         working-directory: release
         run: |
-          cat *.sha256 > SHA256SUMS
+          sed 's/\r$//' *.sha256 > SHA256SUMS
           sha256sum --check SHA256SUMS
           test "$(wc -l < SHA256SUMS)" -eq 2
       - name: Publish both verified packages

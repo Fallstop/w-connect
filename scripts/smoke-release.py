@@ -47,7 +47,9 @@ def smoke(platform):
         version = tomllib.load(manifest)["package"]["version"]
     name = f"w-connect-v{version}-{platform}"
     archive = ROOT / "dist" / (name + (".zip" if windows else ".tar.gz"))
-    expected = archive.with_name(archive.name + ".sha256").read_text().split()[0]
+    checksum = archive.with_name(archive.name + ".sha256").read_bytes()
+    check(b"\r" not in checksum, "Checksum must use LF on every platform for Linux release verification")
+    expected = checksum.decode("utf-8").split()[0]
     with archive.open("rb") as stream:
         check(hashlib.file_digest(stream, "sha256").hexdigest() == expected, "Archive checksum mismatch")
     with tempfile.TemporaryDirectory(prefix="w-connect-smoke-") as temporary:

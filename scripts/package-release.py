@@ -110,7 +110,7 @@ def package(args):
                 bundle.add(staging, arcname=name)
     with archive.open("rb") as stream:
         digest = hashlib.file_digest(stream, "sha256").hexdigest()
-    archive.with_name(archive.name + ".sha256").write_text(f"{digest}  {archive.name}\n", encoding="utf-8")
+    archive.with_name(archive.name + ".sha256").write_text(f"{digest}  {archive.name}\n", encoding="utf-8", newline="\n")
     print(f"Packaged {archive.name} ({archive.stat().st_size:,} bytes)\nSHA-256: {digest}")
 
 
