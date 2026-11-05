@@ -18,6 +18,39 @@ A small, local controller for **Lian Li UNI FAN hubs**, on Linux and Windows. Na
 
 The Linux executable is approximately **1.6 MB**; the Windows CPU sensor helper adds approximately 36 MB for its self-contained .NET runtime. **[Download the latest Linux or Windows release](https://github.com/Fallstop/w-connect/releases/latest)**, including installers and checksums.
 
+## Screenshots
+
+Live Linux captures with an SL v1 controller. The machine was under load, so temperature protection is visible. Curve and color edits are unsaved previews. Click an image for full size.
+
+**Cooling workspace · Slate dark**
+
+[![Slate dark cooling dashboard with live CPU and GPU temperatures, four fan banks, measured RPM and a temperature curve](docs/screenshots/cooling-dark.png)](docs/screenshots/cooling-dark.png)
+
+<table>
+  <tr>
+    <td width="50%" valign="top"><strong>Cooling · Frost light</strong><br><a href="docs/screenshots/cooling-light.png"><img src="docs/screenshots/cooling-light.png" alt="Frost light cooling dashboard showing top exhaust and bottom intake fan banks"></a></td>
+    <td width="50%" valign="top"><strong>Exact curve editing</strong><br><a href="docs/screenshots/curve-editor.png"><img src="docs/screenshots/curve-editor.png" alt="Fan curve editor with expanded temperature and duty values, presets and bank settings"></a></td>
+  </tr>
+  <tr>
+    <td valign="top"><strong>Lighting · Slate dark</strong><br><a href="docs/screenshots/lighting-dark.png"><img src="docs/screenshots/lighting-dark.png" alt="Lilac lighting preview with a hex color field, swatches, brightness and unsaved-change controls"></a></td>
+    <td valign="top"><strong>Lighting · Frost light</strong><br><a href="docs/screenshots/lighting-light.png"><img src="docs/screenshots/lighting-light.png" alt="Light-theme lighting workspace with per-bank selection and a rainbow effect"></a></td>
+  </tr>
+  <tr>
+    <td valign="top"><strong>Settings &amp; profiles</strong><br><a href="docs/screenshots/settings-light.png"><img src="docs/screenshots/settings-light.png" alt="Settings for appearance, motion, control interval, profile import and export, diagnostics and recent activity"></a></td>
+    <td valign="top"><strong>Controller support</strong><br><a href="docs/screenshots/controller-support.png"><img src="docs/screenshots/controller-support.png" alt="Controller selection and the supported-model catalog distinguishing hardware-tested SL from opt-in untested models"></a></td>
+  </tr>
+</table>
+
+<details>
+<summary><strong>Narrow layouts · cooling and lighting at 430 px</strong></summary>
+
+The same local interface adapts to smaller windows.
+
+<a href="docs/screenshots/mobile-cooling.png"><img src="docs/screenshots/mobile-cooling.png" width="300" alt="Cooling dashboard in a narrow light-theme layout with stacked temperature readings, fan banks and curve controls"></a>
+<a href="docs/screenshots/mobile-lighting.png"><img src="docs/screenshots/mobile-lighting.png" width="300" alt="Lighting controls in a narrow dark-theme layout with a fan preview, color controls and save bar"></a>
+
+</details>
+
 ## Controller support
 
 The default only activates the hardware-tested SL v1 `a100` model. In **Settings → Your controller**, enable **untested controller drivers**, choose a device if needed, then save. This is an explicit opt-in; importing a profile cannot grant it. Discovery is read-only, unknown IDs are rejected, and an ambiguous selection never chooses a hub arbitrarily. Only one controller is managed at a time. Switching first requests full speed on the previous hub; other unmanaged hubs are not changed.
