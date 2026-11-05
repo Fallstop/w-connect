@@ -16,33 +16,37 @@ A small, local controller for **Lian Li UNI FAN hubs**, on Linux and Windows. Na
 - Saved configuration, automatic reconnection, desktop launcher and background startup.
 - Cooling continues when you close the page. UI changes are staged until **Save changes**.
 
-The Linux executable is approximately **1.6 MB**; the Windows CPU sensor helper adds approximately 36 MB for its self-contained .NET runtime. **[Download the latest Linux or Windows release](https://github.com/Fallstop/w-connect/releases/latest)**, including installers and checksums.
+The Linux executable is approximately **1.7 MB**; the Windows CPU sensor helper adds approximately 36 MB for its self-contained .NET runtime. **[Download the latest Linux or Windows release](https://github.com/Fallstop/w-connect/releases/latest)**, including installers and checksums.
 
 ## Screenshots
 
-Live Linux captures with an SL v1 controller. The machine was under load, so temperature protection is visible. Curve and color edits are unsaved previews. Click an image for full size.
+Current source build on Linux with a live SL v1 controller. The machine was under load, so temperature protection is visible. Curve and color edits are unsaved previews. Click an image for full size.
 
-**Cooling workspace · Slate dark**
+**Cooling workspace · Dark**
 
-[![Slate dark cooling dashboard with live CPU and GPU temperatures, four fan banks, measured RPM and a temperature curve](docs/screenshots/cooling-dark.png)](docs/screenshots/cooling-dark.png)
+[![Dark cooling dashboard with live CPU and GPU temperatures, four fan banks, measured RPM and a temperature curve](docs/screenshots/cooling-dark.png)](docs/screenshots/cooling-dark.png)
 
 <table>
   <tr>
-    <td width="50%" valign="top"><strong>Cooling · Frost light</strong><br><a href="docs/screenshots/cooling-light.png"><img src="docs/screenshots/cooling-light.png" alt="Frost light cooling dashboard showing top exhaust and bottom intake fan banks"></a></td>
+    <td width="50%" valign="top"><strong>Cooling · Light</strong><br><a href="docs/screenshots/cooling-light.png"><img src="docs/screenshots/cooling-light.png" alt="Light cooling dashboard showing top exhaust and bottom intake fan banks"></a></td>
     <td width="50%" valign="top"><strong>Exact curve editing</strong><br><a href="docs/screenshots/curve-editor.png"><img src="docs/screenshots/curve-editor.png" alt="Fan curve editor with expanded temperature and duty values, presets and bank settings"></a></td>
   </tr>
   <tr>
-    <td valign="top"><strong>Lighting · Slate dark</strong><br><a href="docs/screenshots/lighting-dark.png"><img src="docs/screenshots/lighting-dark.png" alt="Lilac lighting preview with a hex color field, swatches, brightness and unsaved-change controls"></a></td>
-    <td valign="top"><strong>Lighting · Frost light</strong><br><a href="docs/screenshots/lighting-light.png"><img src="docs/screenshots/lighting-light.png" alt="Light-theme lighting workspace with per-bank selection and a rainbow effect"></a></td>
+    <td valign="top"><strong>Lighting · Dark</strong><br><a href="docs/screenshots/lighting-dark.png"><img src="docs/screenshots/lighting-dark.png" alt="Lilac lighting preview with a hex color field, swatches, brightness and unsaved-change controls"></a></td>
+    <td valign="top"><strong>Lighting · Light</strong><br><a href="docs/screenshots/lighting-light.png"><img src="docs/screenshots/lighting-light.png" alt="Light-theme lighting workspace with bank selection, a color preview and lighting controls"></a></td>
   </tr>
   <tr>
     <td valign="top"><strong>Settings &amp; profiles</strong><br><a href="docs/screenshots/settings-light.png"><img src="docs/screenshots/settings-light.png" alt="Settings for appearance, motion, control interval, profile import and export, diagnostics and recent activity"></a></td>
     <td valign="top"><strong>Controller support</strong><br><a href="docs/screenshots/controller-support.png"><img src="docs/screenshots/controller-support.png" alt="Controller selection and the supported-model catalog distinguishing hardware-tested SL from opt-in untested models"></a></td>
   </tr>
+  <tr>
+    <td valign="top"><strong>Settings · Dark</strong><br><a href="docs/screenshots/settings-dark.png"><img src="docs/screenshots/settings-dark.png" alt="Neutral charcoal settings with appearance, cooling, controller and profile groups"></a></td>
+    <td valign="top"><strong>Status details</strong><br><a href="docs/screenshots/status-detail.png"><img src="docs/screenshots/status-detail.png" alt="Compact thermal-protection indicator with its optional details open in the fixed header"></a></td>
+  </tr>
 </table>
 
 <details>
-<summary><strong>Narrow layouts · cooling and lighting at 430 px</strong></summary>
+<summary><strong>Narrow layouts · cooling and lighting at 390 px</strong></summary>
 
 The same local interface adapts to smaller windows.
 
@@ -53,7 +57,7 @@ The same local interface adapts to smaller windows.
 
 ## Controller support
 
-The default only activates the hardware-tested SL v1 `a100` model. In **Settings → Your controller**, enable **untested controller drivers**, choose a device if needed, then save. This is an explicit opt-in; importing a profile cannot grant it. Discovery is read-only, unknown IDs are rejected, and an ambiguous selection never chooses a hub arbitrarily. Only one controller is managed at a time. Switching first requests full speed on the previous hub; other unmanaged hubs are not changed.
+The default only activates the hardware-tested SL v1 `a100` model. In **Settings → Controller**, enable **Untested drivers**, choose a device if needed, then save. This is an explicit opt-in; importing a profile cannot grant it. Discovery is read-only, unknown IDs are rejected, and an ambiguous selection never chooses a hub arbitrarily. Only one controller is managed at a time. Switching first requests full speed on the previous hub; other unmanaged hubs are not changed.
 
 | Model | USB PID (VID `0cf2`) | Validation |
 | --- | --- | --- |
@@ -130,7 +134,7 @@ Only `127.0.0.1:7676` is bound. Host, origin and fetch-site validation reject re
 
 ## Development and evidence
 
-Design reviews: [round 1: 7.21](docs/design-review-1.md), [round 2: 9.33](docs/design-review-2.md), [round 3: 9.53](docs/design-review-3.md). These are structured qualitative assessments, not usability-study statistics.
+The [fresh-context aesthetic review record](docs/design-review-neutral.md) separates visual judgments from behavioral checks and records every score. The earlier mixed-functionality 9.53 rating is not a claim about the current design.
 
 Protocol: [docs/protocol.md](docs/protocol.md). Vendor analysis: [docs/vendor-reverse-engineering.md](docs/vendor-reverse-engineering.md). Hardware validation: [docs/validation.md](docs/validation.md). Tests cover the protocol, malformed packets, curve interpolation, thermal fallback, config validation and cross-origin write protection.
 

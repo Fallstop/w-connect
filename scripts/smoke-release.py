@@ -92,7 +92,7 @@ def smoke(platform):
                     time.sleep(0.2)
                 check(state["demo"] and state["version"] == version, "Wrong running mode or version")
                 check(not state["controller"]["connected"], "Demo must not connect to USB")
-                for path in ("/", "/app.js", "/style.css", "/favicon.svg"):
+                for path in ("/", "/app.js", "/style.css", "/favicon.svg", "/fonts/Geist.woff2", "/fonts/GeistMono.woff2"):
                     body, headers = request(path)
                     check(len(body) > 100, f"Missing embedded asset {path}")
                     check("Content-Security-Policy" in headers, f"Missing CSP on {path}")

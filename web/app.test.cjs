@@ -106,14 +106,14 @@ test('critical temperature highlights full-speed protection instead of implying 
     app.backend.config.channels[0].source='cpu';
     app.backend.sensors.cpu=43;app.backend.sensors.gpu=86;await app.poll();
     assert.match(app.document.getElementById('notice').textContent,/Temperature protection/);
-    assert.match(app.document.getElementById('notice').textContent,/every bank/);
-    assert.equal(app.document.getElementById('live-point-label').textContent,'Full speed requested · curve preview');
+    assert.match(app.document.getElementById('notice').textContent,/All banks request 100%/);
+    assert.equal(app.document.getElementById('live-point-label').textContent,'100% safety override');
   }finally{app.close();}
 });
 
 
-test('polling preserves bank focus, fan nodes, and chart keyboard focus',async()=>{
- const app=await setup();try{const card=app.document.querySelector('.channel-card');const blade=card.querySelector('.fan-blades');card.focus();await app.poll();assert.equal(app.document.activeElement,card);assert.equal(card.querySelector('.fan-blades'),blade);const point=app.document.querySelector('.chart-point');point.focus();await app.poll();assert.equal(app.document.activeElement,point);}finally{app.close();}
+test('polling preserves bank focus, readout nodes, and chart keyboard focus',async()=>{
+ const app=await setup();try{const card=app.document.querySelector('.channel-card');const readout=card.querySelector('.rpm-number');card.focus();await app.poll();assert.equal(app.document.activeElement,card);assert.equal(card.querySelector('.rpm-number'),readout);const point=app.document.querySelector('.chart-point');point.focus();await app.poll();assert.equal(app.document.activeElement,point);}finally{app.close();}
 });
 test('settings preferences persist independently and interval changes can be undone',async()=>{
  const app=await setup();try{app.click('[data-view="system"]');await flush();app.input('theme-preference','dark','change');assert.equal(app.document.documentElement.dataset.theme,'dark');app.input('motion-preference','reduce','change');assert.equal(app.document.documentElement.dataset.motion,'reduce');assert.equal(app.document.getElementById('save-bar').hidden,true);app.input('poll-interval','5000','change');assert.equal(app.document.getElementById('save-bar').hidden,false);app.click('#undo');assert.equal(app.document.getElementById('poll-interval').value,'2000');assert.equal(app.document.getElementById('save-bar').hidden,true);assert.equal(app.requests.filter(r=>r.options.method==='POST').length,0);}finally{app.close();}
@@ -132,4 +132,48 @@ test('untested-controller selection is explicit and imported profiles cannot ena
 
 test('a controller capability change refreshes fan count without losing draft edits',async()=>{
  const app=await setup();try{app.input('bank-name','Draft name');app.backend.controller.max_fans_per_bank=6;app.backend.controller.name='SL V2';app.backend.controller.hardware_tested=false;await app.poll();assert.equal(app.document.querySelectorAll('#fan-count option').length,6);assert.equal(app.document.getElementById('bank-name').value,'Draft name');assert.match(app.document.getElementById('notice').textContent,/Untested driver/);}finally{app.close();}
+});
+
+test('status transitions keep one disclosure and preserve unsaved edits',async()=>{
+  const app=await setup();try{
+    const disclosure=app.document.getElementById('status-control');
+    const status=app.document.getElementById('connection');
+    app.input('bank-name','Uncommitted name');
+    assert.match(status.textContent,/Connected/);
+    app.backend.sensors.cpu=90;await app.poll();
+    assert.match(status.textContent,/Thermal limit/);
+    assert.equal(app.document.querySelectorAll('#status-control').length,1);
+    assert.strictEqual(app.document.getElementById('status-control'),disclosure);
+    assert.strictEqual(app.document.getElementById('connection'),status);
+    app.backend.sensors.cpu=43;app.backend.sensors.gpu=null;await app.poll();
+    assert.match(status.textContent,/Sensor missing/);
+    app.failure=true;await app.poll();assert.match(status.textContent,/Connection lost/);
+    app.failure=false;app.backend.sensors.gpu=39;await app.poll();
+    assert.match(status.textContent,/Connected/);
+    assert.equal(status.classList.contains('error'),false);
+    assert.equal(status.classList.contains('warning'),false);
+    disclosure.open=true;
+    app.document.dispatchEvent(new app.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+    assert.equal(disclosure.open,false);
+    disclosure.open=true;app.click('#page-title');assert.equal(disclosure.open,false);
+    assert.equal(app.document.getElementById('bank-name').value,'Uncommitted name');
+    assert.equal(app.requests.filter(r=>r.options?.method==='POST').length,0);
+  }finally{app.close();}
+});
+
+test('compact bank selector retains drafts and range progress matches controls',async()=>{
+  const app=await setup();try{
+    app.click('[data-view="lighting"]');app.input('lighting-mode','static','change');
+    app.input('lighting-brightness','50');
+    assert.equal(app.document.getElementById('lighting-brightness').style.getPropertyValue('--range-fill'),'50%');
+    app.input('lighting-bank-select','2','change');
+    assert.equal(app.document.getElementById('bank-name').value,'Bank 3');
+    app.input('lighting-bank-select','0','change');
+    assert.equal(app.document.getElementById('lighting-brightness').value,'50');
+    app.click('[data-view="cooling"]');app.click('[data-mode="fixed"]');
+    app.input('fixed-duty','70');
+    assert.equal(app.document.getElementById('fixed-duty').style.getPropertyValue('--range-fill'),'50%');
+    await app.poll();assert.equal(app.document.getElementById('fixed-duty').value,'70');
+    assert.equal(app.requests.filter(r=>r.options?.method==='POST').length,0);
+  }finally{app.close();}
 });

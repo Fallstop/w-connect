@@ -67,3 +67,7 @@ Rust dependencies are obtained from crates.io through Cargo.lock. The following 
 | windows-link | 0.2.1 | MIT OR Apache-2.0 |
 | windows-sys | 0.61.2 | MIT OR Apache-2.0 |
 | zmij | 1.0.23 | MIT |
+
+## Fonts
+
+Geist and Geist Mono are bundled locally under the SIL Open Font License 1.1. Font files, upstream revision and the license are in [assets/fonts](../assets/fonts/README.md). No font requests leave the local application.

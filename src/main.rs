@@ -587,6 +587,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
             }),
         )
+        .route(
+            "/fonts/Geist.woff2",
+            get(|| async {
+                (
+                    [("content-type", "font/woff2")],
+                    include_bytes!("../assets/fonts/Geist.woff2").as_slice(),
+                )
+            }),
+        )
+        .route(
+            "/fonts/GeistMono.woff2",
+            get(|| async {
+                (
+                    [("content-type", "font/woff2")],
+                    include_bytes!("../assets/fonts/GeistMono.woff2").as_slice(),
+                )
+            }),
+        )
         .route("/api/state", get(state))
         .route("/api/devices", get(devices))
         .route("/api/config", post(configure))

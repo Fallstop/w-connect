@@ -16,13 +16,15 @@ Host: Manjaro Linux x86_64; UNI FAN SL v1.8, USB `0cf2:a100`, interface1. CPU te
 ## Automated validation
 
 - Sixteen Rust unit tests (0.2): packet encoding and channel selection, descriptor matching, RPM parsing/rejection, RBG lighting, fan-count limits, thermal override/missing sensors/stale data, ramp-down, interpolation, configuration validation and origin protection.
-- Twelve DOM behavior tests (0.2): real/stale telemetry, draft preservation, save headers, emergency/resume, curve constraints, demo mode, unsupported lighting, critical-temperature notices.
+- Fourteen DOM behavior tests (current source): real/stale telemetry, draft preservation, save headers, emergency/resume, curve constraints, demo mode, unsupported lighting, critical-temperature notices.
 - Rust formatting, Clippy with warnings denied, JavaScript syntax and release build.
 - Review by separate agents cross-checked protocol against vendor decompilation and prior art, then examined control-loop safety and installers.
 
 ## Design refinement and extended support
 
-Three independent design reviews used the same ten-category rubric: 7.21 → 9.33 → 9.53/10. The final reviewer tested live desktop/mobile layouts, light/dark appearances, motion, loading/error states, profile operations and keyboard focus. Axe found zero A/AA violations across six page/theme combinations. The rating is a qualitative judgment for this focused workflow, not a claim of feature parity or a usability study.
+The original mixed-functionality design ratings were superseded by [fresh-context aesthetic reviews](design-review-neutral.md). Those ratings remain below the requested 9.5 threshold; passing behavior and accessibility checks is not an aesthetic score.
+
+The neutral-theme revision passed browser checks across six view/theme combinations and 360, 390, 768, 1280 and 1440 px widths. Status changes (normal, hot, sensor unavailable, connection lost, recovery) left header and cooling-control geometry unchanged. The action footer did not overlap scrolling content. Keyboard curve editing, draft retention and reduced-motion handling passed. Axe reported zero A/AA findings. Both fonts are embedded, licensed and served locally. The extracted Linux package passed its USB-free smoke test with the new font routes.
 
 Additional driver tests cover exact family-specific PWM registers, legacy output transport, V2 RPM offsets, independent lighting rings, six-fan quantities, frame commits, spectrum palettes, descriptor validation, unknown-ID rejection, opt-in and unique selection. UI tests cover explicit activation, six-fan capability refresh and ensuring imports do not grant untested-driver permission. The original SL transfers remain covered by regression fixtures. A post-expansion browser scan, including the expanded controller catalog, also reported zero A/AA findings across all six view/theme combinations. The installed0.2 release reconnected to the actual SL hub, read both populated banks, returned the seven-model catalog with untested support disabled, and rejected a six-fan configuration for the four-fan SL model before any hardware change.
 
