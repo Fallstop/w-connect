@@ -1,0 +1,10 @@
+/target/
+/dist/
+/.research/
+/.runtime/
+*.log
+/windows/**/bin/
+/windows/**/obj/
+
+node_modules/
+__pycache__/

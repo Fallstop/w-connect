@@ -1,0 +1,16 @@
+{
+  "name": "w-connect-ui-tests",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Test-only dependencies for the dependency-free W-Connect UI",
+  "scripts": {
+    "test": "node --test app.test.cjs",
+    "check": "node --check app.js"
+  },
+  "devDependencies": {
+    "jsdom": "29.1.1"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}

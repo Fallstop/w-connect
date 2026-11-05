@@ -1,0 +1,108 @@
+name: Build and release
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  build:
+    name: Test and package (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform: linux-x64
+          - os: windows-2022
+            platform: windows-x64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+        with:
+          toolchain: 1.98.1
+          components: rustfmt, clippy
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libudev-dev pkg-config
+      - name: Verify version and release notes
+        run: python scripts/package-release.py --check
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo test --locked
+      - run: npm --prefix web ci
+      - run: npm --prefix web run check
+      - run: npm --prefix web test
+      - run: cargo build --release --locked
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        if: runner.os == 'Windows'
+        with:
+          dotnet-version: '8.0.x'
+      - name: Restore locked Windows sensor dependencies
+        if: runner.os == 'Windows'
+        run: dotnet restore windows/Sensors/WConnect.Sensors.csproj --locked-mode
+      - name: Publish Windows sensor helper
+        if: runner.os == 'Windows'
+        run: dotnet publish windows/Sensors/WConnect.Sensors.csproj -c Release --no-restore -o target/release/sensors
+      - name: Package binary, installers and licenses
+        run: python scripts/package-release.py --platform ${{ matrix.platform }}
+      - name: Test the extracted release package without USB access
+        run: python scripts/smoke-release.py --platform ${{ matrix.platform }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: w-connect-${{ matrix.platform }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+  release:
+    name: Publish tagged release
+    if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: w-connect-*
+          path: release
+          merge-multiple: true
+      - name: Verify and collect checksums
+        working-directory: release
+        run: |
+          cat *.sha256 > SHA256SUMS
+          sha256sum --check SHA256SUMS
+          test "$(wc -l < SHA256SUMS)" -eq 2
+      - name: Publish both verified packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" release/*.tar.gz release/*.zip release/SHA256SUMS \
+            --draft --verify-tag --title "W-Connect $RELEASE_TAG" \
+            --notes-file ".github/release-notes/$RELEASE_TAG.md"
+          gh release edit "$RELEASE_TAG" --draft=false --latest

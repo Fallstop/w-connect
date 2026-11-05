@@ -1,0 +1,393 @@
+'use strict';
+(() => {
+  const $ = id => document.getElementById(id);
+  const MIN_DUTY = 40;
+  const presets = {
+    quiet: [{temp:30,duty:40},{temp:50,duty:40},{temp:65,duty:55},{temp:75,duty:75},{temp:85,duty:100}],
+    balanced: [{temp:30,duty:40},{temp:50,duty:45},{temp:65,duty:65},{temp:75,duty:85},{temp:85,duty:100}],
+    performance: [{temp:30,duty:45},{temp:45,duty:60},{temp:60,duty:80},{temp:75,duty:100},{temp:85,duty:100}]
+  };
+  let state = null, draft = null, dirty = false, selected = 0, view = 'cooling', busy = false;
+  let failure = '', toastTimer, dragging = null, pollingTimer, pollBusy = false, revision = 0;
+  let undoStack = [], lastDraft = null, awaitingApply = null, catalog = null, discovering = false;
+  const mediaTheme = window.matchMedia?.('(prefers-color-scheme: dark)');
+  const mediaMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+  const preferences = (()=>{try{return JSON.parse(localStorage.getItem('w-connect-preferences')) || {};}catch{return {};}})();
+  function applyPreferences() {
+    document.documentElement.dataset.theme = preferences.theme === 'dark' || (preferences.theme !== 'light' && mediaTheme?.matches) ? 'dark' : 'light';
+    document.documentElement.dataset.motion = preferences.motion === 'reduce' || (preferences.motion !== 'full' && mediaMotion?.matches) ? 'reduce' : 'full';
+    $('theme-preference').value = preferences.theme || 'system'; $('motion-preference').value = preferences.motion || 'system';
+  }
+  applyPreferences(); mediaTheme?.addEventListener('change',applyPreferences); mediaMotion?.addEventListener('change',applyPreferences);
+  const clone = value => JSON.parse(JSON.stringify(value));
+  const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const finite = value => typeof value === 'number' && Number.isFinite(value);
+  const fmt = (value, digits = 0) => finite(value) ? value.toLocaleString(undefined, {maximumFractionDigits:digits}) : '—';
+  const clamp = (value,min,max) => Math.min(max,Math.max(min,value));
+  const channel = () => draft?.channels[selected];
+  const actual = () => state?.channels?.find(c => c.index === selected) ?? state?.channels?.[selected];
+  function toast(message, error = false) {
+    clearTimeout(toastTimer); $('toast').textContent = message; $('toast').classList.toggle('error',error); $('toast').hidden = false;
+    toastTimer = setTimeout(() => { $('toast').hidden = true; }, error ? 9000 : 4000);
+  }
+  async function request(path, body) {
+    const response = await fetch(path, {method:body === undefined ? 'GET' : 'POST', headers:body === undefined ? {} : {'Content-Type':'application/json','X-W-Connect':'1'}, body:body === undefined ? undefined : JSON.stringify(body), signal:AbortSignal.timeout(7000), cache:'no-store'});
+    let data;
+    try { data = await response.json(); } catch { throw new Error('The local service returned an unreadable response.'); }
+    if (!response.ok || data.error && !data.controller) throw new Error(data.error || `Request failed (${response.status}).`);
+    return data;
+  }
+  function dirtyChanged(record = true) {
+    const next = JSON.stringify(draft);
+    if (record && !dragging && lastDraft && next !== lastDraft && next !== JSON.stringify(state?.config)) { undoStack.push(JSON.parse(lastDraft)); if (undoStack.length > 40) undoStack.shift(); }
+    if (!dragging) lastDraft = next;
+    dirty = JSON.stringify(draft) !== JSON.stringify(state?.config);
+    $('save-bar').hidden = !dirty;
+    $('save').disabled = busy || !dirty;
+    $('discard').disabled = busy;
+    if (!dirty) undoStack = [];
+    $('undo').disabled = busy || !undoStack.length;
+    const changed = draft?.channels.filter((c,i)=>JSON.stringify(c)!==JSON.stringify(state?.config.channels[i])).length || 0;
+    $('change-summary').textContent = changed ? `${changed} bank${changed===1?'':'s'} changed` : JSON.stringify(draft?.controller)!==JSON.stringify(state?.config.controller) ? 'Controller settings changed' : 'Control interval changed';
+    renderPresets();
+  }
+  function criticalTemperature() { return finite(state?.sensors?.cpu) && state.sensors.cpu >= 85 || finite(state?.sensors?.gpu) && state.sensors.gpu >= 85; }
+  function selectedTemperature() {
+    const sensors = state?.sensors || {}, source = channel()?.source;
+    if (source === 'cpu') return sensors.cpu;
+    if (source === 'gpu') return sensors.gpu;
+    return finite(sensors.cpu) && finite(sensors.gpu) ? Math.max(sensors.cpu,sensors.gpu) : null;
+  }
+  function fanSVG(rpm, color) {
+    return `<svg class="fan-unit${finite(rpm) && rpm > 0 ? ' running' : ''}" viewBox="0 0 64 64" aria-hidden="true"${color ? ` style="color:${esc(color)}"` : ''}><rect class="fan-frame" x="2" y="2" width="60" height="60" rx="9"/><circle class="fan-ring" cx="32" cy="32" r="24"/><g class="fan-blades" style="--rotation:${finite(rpm) && rpm > 0 ? clamp(2400/rpm,1,8) : 3}s">${Array.from({length:7},(_,i) => `<path transform="rotate(${i*360/7} 32 32)" d="M30 29C21 20 25 9 34 12C41 15 40 23 35 30Z"/>`).join('')}</g><circle class="fan-hub" cx="32" cy="32" r="7"/><circle cx="7" cy="7" r="1" fill="currentColor"/><circle cx="57" cy="57" r="1" fill="currentColor"/></svg>`;
+  }
+  function renderChannels() {
+    if (!draft) return;
+    const container=$('channels');
+    if(container.children.length!==draft.channels.length) container.innerHTML=draft.channels.map((_,i)=>`<button class="channel-card" data-channel="${i}"><div class="channel-card-top"><span class="channel-number">${String(i+1).padStart(2,'0')}</span><h3></h3></div><div class="fan-bank"></div><div class="channel-readout"><strong><span class="rpm-number"></span><small>RPM</small></strong><span class="channel-duty"></span></div><div class="channel-bottom"><span class="card-mode"></span><span class="card-state"></span></div></button>`).join('');
+    draft.channels.forEach((config,i)=>{
+      const live=state.channels?.find(c=>c.index===i)||{}, card=container.children[i], connected=state.controller?.connected && !failure;
+      const rpm=connected ? live.rpm : null, count=clamp(config.fan_count||1,1,6), bank=card.querySelector('.fan-bank');
+      card.classList.toggle('selected',selected===i); card.classList.toggle('idle',rpm===0); card.setAttribute('aria-pressed',String(selected===i));card.setAttribute('aria-label',`Select ${config.name || `Channel ${i+1}`}`);
+      card.querySelector('h3').textContent=config.name;card.querySelector('h3').title=config.name;
+      if(bank.children.length!==count) bank.innerHTML=Array.from({length:count},()=>fanSVG(rpm)).join('');
+      bank.querySelectorAll('.fan-unit').forEach(fan=>{fan.classList.toggle('running',finite(rpm)&&rpm>0);fan.querySelector('.fan-blades').style.setProperty('--rotation',`${finite(rpm)&&rpm>0?clamp(2400/rpm,1,8):3}s`);});
+      card.querySelector('.rpm-number').textContent=fmt(rpm);card.querySelector('.channel-duty').textContent=connected?`${fmt(live.duty)}% sent`:'—';
+      card.querySelector('.card-mode').textContent=live.mode==='fixed'?'Fixed speed':'Temperature curve';
+      card.querySelector('.card-state').textContent=failure?'Stale':!connected?'Disconnected':rpm===0?'No RPM signal':'Running';
+      card.title=rpm===0?'No speed signal. This port may be empty, disconnected, or stalled.':`${config.name}: ${fmt(rpm)} RPM`;
+    });
+    const tabs=$('lighting-tabs');
+    if(tabs.children.length!==draft.channels.length) tabs.innerHTML=draft.channels.map((_,i)=>`<button data-channel="${i}"></button>`).join('');
+    draft.channels.forEach((c,i)=>{const button=tabs.children[i];button.textContent=c.name;button.classList.toggle('active',selected===i);button.setAttribute('aria-pressed',String(selected===i));});
+  }
+  function renderTelemetry() {
+    if (!state) return;
+    const connected = state.controller?.connected, stale = Boolean(failure);
+    $('connection').classList.toggle('warning', !connected || stale || state.demo);
+    $('connection').lastElementChild.textContent = stale ? 'Connection interrupted' : state.demo ? 'Demo mode' : connected ? 'Controller connected' : 'Controller unavailable';
+    $('controller-name').textContent = state.controller?.name || 'No controller found';
+    $('controller-detail').textContent = connected ? `${draft?.channels.length || 4} independently controlled channels` : 'Waiting for a supported USB controller';
+    for (const type of ['cpu','gpu']) {
+      const value = stale ? null : state.sensors?.[type];
+      $(type+'-temp').innerHTML = `${fmt(value)}<small>°C</small>`;
+      $(type+'-track').style.width = finite(value) ? clamp(value,0,100)+'%' : '0%';
+    }
+    $('sample-age').textContent = stale ? 'Data unavailable' : `Live · ${(state.config?.poll_ms || 2000)/1000}s updates`;
+    $('footer-health').textContent = stale ? 'Connection lost · retrying' : state.demo ? 'Demo mode · hardware writes disabled' : connected ? 'Live control · local only' : 'Waiting for controller access';
+    $('sidebar-version').textContent = `W-CONNECT ${state.version || ''}`;
+    const messages = [];
+    if (failure) messages.push('Lost contact with W-Connect. Displayed controller readings may be stale. Reconnecting automatically.');
+    else {
+      if (state.demo) messages.push('Demo mode — hardware writes are disabled. Temperature readings come from this machine.');
+      if (!connected) messages.push(state.controller?.error || 'No supported controller is accessible. Check the USB connection and device permissions.');
+      else if (state.controller?.error) messages.push(state.controller.error);
+      if(connected && state.controller?.hardware_tested === false) messages.push('Untested driver: this model has protocol evidence, but has not been verified on physical hardware. Watch temperatures and RPM after changes.');
+      if (criticalTemperature()) messages.push('Temperature protection: CPU or GPU has reached 85°C. Full speed is requested on every bank until temperatures fall.');
+      else if (state.emergency) messages.push('Full-speed override is active. Select Resume profile to return to your saved cooling settings.');
+      const source = channel()?.source;
+      if ((source === 'cpu' || source === 'max') && !finite(state.sensors?.cpu)) messages.push('CPU temperature is unavailable. Banks following this sensor use full speed until readings return.');
+      if ((source === 'gpu' || source === 'max') && !finite(state.sensors?.gpu)) messages.push('GPU temperature is unavailable. Banks following this sensor use full speed until readings return.');
+    }
+    $('notice').textContent = messages.join(' '); $('notice').hidden = !messages.length;
+    $('emergency').disabled = busy || !state;
+    if (!busy) { $('emergency').textContent = state.emergency ? '↙ Resume profile' : '↗ Full speed'; $('emergency').title = state.emergency ? 'Resume your saved cooling settings' : 'Request 100% on all fan channels'; }
+    const live = actual();
+    $('selected-rpm').innerHTML = `${fmt(connected && !stale ? live?.rpm : null)} <small>RPM</small>`;
+    $('selected-target').innerHTML = `${fmt(connected && !stale ? live?.target : null)} <small>%</small>`;
+    $('bank-status').textContent = stale ? 'Readings unavailable · reconnecting' : !connected ? 'Waiting for controller access' : live?.status || 'Controller connected';
+    $('lighting-controls').disabled = !state.controller?.lighting_supported;
+    $('lighting-unsupported').hidden = Boolean(state.controller?.lighting_supported);
+    renderChannels();
+    if (!document.activeElement?.closest('#curve-chart')) renderGraph();
+    renderSystem();
+    renderApplyStatus();
+  }
+  function renderFanCountOptions(){
+    if(!channel())return;
+    const maxFans=targetMaxFans();
+    $('fan-count').innerHTML=Array.from({length:Math.max(maxFans,channel().fan_count)},(_,i)=>`<option value="${i+1}"${i+1>maxFans?' disabled':''}>${i+1} fan${i?'s':''}${i+1>maxFans?' · exceeds controller limit':''}</option>`).join('');
+    $('fan-count').value = channel().fan_count;
+  }
+  function renderEditor() {
+    const config = channel(); if (!config) return;
+    $('selected-label').textContent = `CHANNEL ${String(selected+1).padStart(2,'0')} / ${config.name || 'Fan bank'}`;
+    $('poll-interval').value = draft.poll_ms;
+    $('allow-untested').checked = Boolean(draft.controller?.allow_untested);
+    renderDevices();
+    $('port-label').textContent = `PORT ${selected+1}`;
+    $('bank-name').value = config.name || '';
+    renderFanCountOptions();
+    $('temperature-source').value = config.source;
+    $('fixed-duty').value = config.fixed_duty;
+    $('fixed-value').textContent = config.fixed_duty;
+    $('curve-container').hidden = config.mode !== 'curve';
+    $('fixed-container').hidden = config.mode !== 'fixed';
+    $('temperature-source').disabled = false;
+    document.querySelectorAll('[data-mode]').forEach(el => { el.classList.toggle('active', el.dataset.mode === config.mode); el.setAttribute('aria-pressed',el.dataset.mode === config.mode); });
+    $('copy-all').textContent = config.mode === 'curve' ? 'Apply this curve to all banks' : 'Apply this speed to all banks';
+    document.querySelector('.preset-buttons').hidden = config.mode !== 'curve';
+    renderPresets(); renderPointTable(); renderGraph(); renderLighting();
+  }
+  function renderPresets() {
+    document.querySelectorAll('[data-preset]').forEach(el => {
+      const same = JSON.stringify(channel()?.curve) === JSON.stringify(presets[el.dataset.preset]);
+      el.classList.toggle('active',same); el.setAttribute('aria-pressed',same);
+    });
+  }
+  const chart = {left:37,right:643,top:19,bottom:239,minTemp:20,maxTemp:90,minDuty:20,maxDuty:100};
+  const x = temp => chart.left+(temp-chart.minTemp)/(chart.maxTemp-chart.minTemp)*(chart.right-chart.left);
+  const y = duty => chart.bottom-(duty-chart.minDuty)/(chart.maxDuty-chart.minDuty)*(chart.bottom-chart.top);
+  function interpolate(points,temp) {
+    if (!points?.length || !finite(temp)) return null;
+    if (temp <= points[0].temp) return points[0].duty;
+    for (let i=1;i<points.length;i++) if (temp <= points[i].temp) {
+      const a=points[i-1],b=points[i]; return a.duty+(b.duty-a.duty)*(temp-a.temp)/(b.temp-a.temp);
+    }
+    return points.at(-1).duty;
+  }
+  function renderGraph() {
+    const config = channel(); if (!config?.curve?.length || dragging !== null) return;
+    const width = Math.max(300,Math.min(660,$('curve-chart').clientWidth || 660));
+    chart.right=width-17; $('curve-chart').setAttribute('viewBox',`0 0 ${width} 270`);
+    const points = config.curve;
+    let html = '';
+    for (const duty of [20,40,60,80,100]) html += `<line class="chart-grid" x1="${chart.left}" x2="${chart.right}" y1="${y(duty)}" y2="${y(duty)}"/><text class="chart-axis" x="25" y="${y(duty)+3}" text-anchor="end">${duty}</text>`;
+    for (let temp=20;temp<=90;temp+=10) html += `<line class="chart-grid" x1="${x(temp)}" x2="${x(temp)}" y1="${chart.top}" y2="${chart.bottom}"/><text class="chart-axis" x="${x(temp)}" y="260" text-anchor="middle">${temp}</text>`;
+    const path = `M${x(20)},${y(points[0].duty)} `+points.map(p=>`L${x(p.temp)},${y(p.duty)}`).join(' ')+` L${x(90)},${y(points.at(-1).duty)}`;
+    html += `<path class="chart-area" d="${path} L${x(90)},${chart.bottom} L${x(20)},${chart.bottom} Z"/><path class="chart-path" d="${path}"/>`;
+    const temp = failure ? null : selectedTemperature();
+    const target = interpolate(points,temp);
+    if (finite(temp)) {
+      const tx = x(clamp(temp,20,90)), ty = y(target);
+      html += `<line class="chart-live-line" x1="${tx}" x2="${tx}" y1="${ty}" y2="${chart.bottom}"/><circle class="chart-live" cx="${tx}" cy="${ty}" r="5"/>`;
+      $('live-point-label').textContent = `${fmt(temp,1)}°C → ${fmt(target)}% curve preview`;
+      if (state.emergency || criticalTemperature()) $('live-point-label').textContent = 'Full speed requested · curve preview';
+    } else $('live-point-label').textContent = 'Temperature unavailable';
+    points.forEach((p,i) => {
+      html += `<g data-point="${i}"><circle class="chart-point-halo" cx="${x(p.temp)}" cy="${y(p.duty)}" r="14"/><circle class="chart-point" tabindex="0" role="slider" aria-label="Curve point ${i+1}, ${p.temp} degrees Celsius. Arrow keys adjust temperature and speed." aria-valuemin="40" aria-valuemax="100" aria-valuenow="${p.duty}" aria-valuetext="${p.temp}°C, ${p.duty}%" cx="${x(p.temp)}" cy="${y(p.duty)}" r="5"/></g>`;
+    });
+    const focused = document.activeElement?.closest('[data-point]')?.dataset.point;
+    $('curve-chart').innerHTML = html;
+    if (focused !== undefined) $('curve-chart').querySelector(`[data-point="${focused}"] .chart-point`)?.focus({preventScroll:true});
+  }
+  function renderPointTable() {
+    if (!channel()) return;
+    const points=channel().curve, table=$('point-table');
+    if(table.children.length!==points.length) table.innerHTML=points.map((_,i)=>`<div class="point-row"><span>Point ${i+1}</span><label><span class="sr-only">Point ${i+1} temperature</span><input type="number" data-point-temp="${i}" step="1">°C</label><label><span class="sr-only">Point ${i+1} fan speed</span><input type="number" data-point-duty="${i}" step="1">%</label><button class="remove-point" data-remove-point="${i}" aria-label="Remove point ${i+1}">×</button></div>`).join('');
+    points.forEach((p,i)=>{const row=table.children[i],temp=row.querySelector('[data-point-temp]'),duty=row.querySelector('[data-point-duty]');temp.value=p.temp;temp.min=i?points[i-1].temp+1:20;temp.max=i<points.length-1?points[i+1].temp-1:85;duty.value=p.duty;duty.min=i?points[i-1].duty:MIN_DUTY;duty.max=i<points.length-1?points[i+1].duty:100;duty.disabled=i===points.length-1;duty.title=duty.disabled?'The final point stays at 100% for safe cooling':'';row.querySelector('button').hidden=points.length<=2||i===points.length-1;});
+    $('add-point').disabled = points.length >= 10;
+  }
+  function setPoint(index,temp,duty) {
+    const points = channel().curve;
+    const before=points[index-1],after=points[index+1];
+    points[index] = {temp:clamp(Math.round(temp),before ? before.temp+1 : 20,after ? after.temp-1 : 85),duty:index===points.length-1 ? 100 : clamp(Math.round(duty),before ? before.duty : MIN_DUTY,after ? after.duty : 100)};
+    dirtyChanged();
+  }
+  function renderLighting() {
+    const config = channel(); if (!config) return;
+    const lighting = config.lighting || {mode:'preserve',color:'#67c8df',brightness:70};
+    $('lighting-unsupported').hidden = Boolean(state.controller?.lighting_supported);
+    $('lighting-controls').disabled = !state.controller?.lighting_supported;
+    $('lighting-mode').value = lighting.mode;
+    $('lighting-color').value = lighting.color;
+    if (document.activeElement !== $('color-hex')) {$('color-hex').value = lighting.color.toUpperCase();$('color-hex').removeAttribute('aria-invalid');}
+    $('color-label').textContent = lighting.color.toUpperCase();
+    $('lighting-brightness').value = lighting.brightness;
+    $('brightness-label').textContent = `${lighting.brightness}%${lighting.brightness%25?' · hardware uses 25% steps':''}`;
+    $('color-controls').hidden = lighting.mode !== 'static';
+    $('lighting-brightness').disabled = ['preserve','off'].includes(lighting.mode);
+    $('lighting-preview').classList.toggle('is-off',lighting.mode==='off');
+    $('lighting-preview').classList.toggle('is-rainbow',lighting.mode==='rainbow');
+    $('lighting-preview').style.setProperty('--light-color',lighting.color);
+    $('lighting-preview').innerHTML = `<div class="fan-bank" style="opacity:${lighting.mode==='off' || lighting.mode==='preserve' ? 1 : .25+.75*lighting.brightness/100}">${Array.from({length:clamp(config.fan_count || 1,1,6)},()=>fanSVG(null)).join('')}</div><span class="preview-caption">${lighting.mode==='preserve' ? 'Keep current hardware lighting · appearance unknown' : 'Color preview · appearance varies on hardware'}</span>`;
+  }
+  function renderSystem() {
+    const rows = [['Driver verification',state.controller?.hardware_tested === true ? 'Hardware-tested on SL v1 a100' : state.controller?.connected ? 'Protocol-verified · hardware untested' : 'No active controller'],['Application',`W-Connect ${state.version || ''}`],['Platform',state.platform || 'Unknown'],['Controller',state.controller?.name || 'Unavailable'],['USB identifier',`${usbHex(state.controller?.vid)}:${usbHex(state.controller?.pid)}`],['Sensor source',state.sensors?.source || 'Unavailable'],['Polling interval',`${(state.config?.poll_ms || 2000)/1000} seconds`],['Running for',formatUptime(state.uptime_secs)],['Connection',failure ? 'Interrupted' : state.controller?.connected ? 'Connected' : 'Unavailable']];
+    $('system-details').innerHTML = rows.map(([a,b])=>`<div><dt>${esc(a)}</dt><dd>${esc(b)}</dd></div>`).join('');
+    $('event-log').innerHTML = state.events?.length ? [...state.events].reverse().slice(0,40).map(event=>`<li><time>${esc(formatTime(event.time))}</time>${esc(event.message)}</li>`).join('') : '<li class="muted">No recent activity.</li>';
+  }
+  function usbHex(value) { return finite(value) ? value.toString(16).padStart(4,'0') : value || '—'; }
+  function formatTime(value) { const numeric = Number(value); const date = new Date(Number.isFinite(numeric) && String(value).trim() !== '' ? numeric * 1000 : value); return Number.isNaN(date.getTime()) ? String(value || '') : date.toLocaleTimeString(); }
+  function formatUptime(value) { if (!finite(value)) return '—'; const h=Math.floor(value/3600),m=Math.floor(value%3600/60); return h ? `${h}h ${m}m` : m ? `${m}m` : `${Math.floor(value)}s`; }
+  function showView(next) {
+    const changedView = view !== next; view=next;
+    if (next==='system' && !catalog && !discovering) discoverDevices();
+    if (changedView) {$(next+'-view').classList.remove('view-enter'); requestAnimationFrame(()=>$(next+'-view').classList.add('view-enter'));}
+    const titles={cooling:['Cooling','Tune your airflow. Let temperatures do the rest.'],lighting:['Lighting','One scene per bank. Preview first, apply when ready.'],system:['Settings','Your workspace, your profiles, your peace of mind.']};
+    $('page-name').textContent = next==='system'?'Settings':next[0].toUpperCase()+next.slice(1);
+    [$('page-title').textContent,$('page-description').textContent]=titles[next];
+    document.querySelectorAll('[data-view]').forEach(el => { el.classList.toggle('active',el.dataset.view===next); if (el.dataset.view===next) el.setAttribute('aria-current','page'); else el.removeAttribute('aria-current'); });
+    for(const name of ['cooling','lighting','system']) $(name+'-view').hidden=!state || name!==next;
+  }
+  function acceptState(data, reset = false) {
+    if (!data.channels?.length && data.uptime_secs < 2 && !data.demo) return;
+    if (!data.config?.channels?.length) throw new Error('The local service returned an incomplete configuration.');
+    const configChanged = JSON.stringify(state?.config)!==JSON.stringify(data.config);
+    const capabilitiesChanged = JSON.stringify(state?.controller)!==JSON.stringify(data.controller);
+    state=data; failure='';
+    const editingField = document.activeElement?.matches('input, select') || dragging !== null;
+    const shouldReset = !draft || reset || (!dirty && !editingField && configChanged);
+    if (shouldReset) { draft=clone(state.config); selected=Math.min(selected,draft.channels.length-1); dirty=false; renderEditor(); dirtyChanged(); }
+    if(capabilitiesChanged)renderFanCountOptions();
+    $('loading').hidden=true;
+    showView(view); renderTelemetry();
+  }
+  async function poll() {
+    clearTimeout(pollingTimer);
+    if (pollBusy || busy) { pollingTimer=setTimeout(poll,1000); return; }
+    pollBusy=true;
+    const startedRevision = revision;
+    try {
+      const data=await request('/api/state');
+      if (!busy && startedRevision === revision) acceptState(data);
+    } catch(error) {
+      failure=error.message;
+      if (state) renderTelemetry();
+      else { $('notice').textContent='Cannot reach the local W-Connect service. Start W-Connect and keep this page open; it will reconnect automatically.'; $('notice').hidden=false; $('connection').classList.add('warning'); $('connection').lastElementChild.textContent='Service unavailable'; $('loading').querySelector('p').textContent='The background service is not responding. We’ll keep trying, or you can retry now.'; $('retry-connection').hidden=false; }
+    } finally { pollBusy=false; pollingTimer=setTimeout(poll,state?.config?.poll_ms || 2000); }
+  }
+  function validate() {
+    if ($('color-hex').getAttribute('aria-invalid') === 'true') return 'Correct the hex color before saving.';
+    for (const [i,c] of draft.channels.entries()) {
+      if (c.fan_count>targetMaxFans()) return `This controller supports up to ${targetMaxFans()} fans per bank.`;
+      if (!c.name.trim()) return `Give bank ${i+1} a name.`;
+      const p=c.curve;
+      if (!Array.isArray(p) || p.length<2) return 'A curve needs at least two points.';
+      if (p.some((v,j)=>!finite(v.temp)||!finite(v.duty)||v.temp<20||v.temp>85||v.duty<40||v.duty>100||(j>0&&(v.temp<=p[j-1].temp||v.duty<p[j-1].duty)))) return 'Curve points must rise in temperature and never decrease in speed, within 20–85°C and 40–100%.';
+      if (p.at(-1).duty!==100) return 'Each curve must reach 100% by 85°C.';
+    }
+    return '';
+  }
+  function setEditorBusy(value) {
+    for (const name of ['cooling','lighting','system']) $(name+'-view').inert = value;
+    $('save').disabled=value; $('discard').disabled=value;
+  }
+  async function save() {
+    if (busy || !draft || !dirty) return;
+    const error=validate(); if(error){toast(error,true);return;}
+    busy=true; revision++; setEditorBusy(true); $('save').textContent='Saving…'; dirtyChanged(); $('emergency').disabled=true;
+    try { const data=await request('/api/config',clone(draft)); awaitingApply=data.requested_revision ?? null; acceptState(data,true); toast(state.controller?.connected ? 'Settings saved. The controller will apply them on the next update.' : 'Settings saved. They will apply when the controller connects.'); }
+    catch(error){toast(error.message,true);} finally {busy=false;setEditorBusy(false);$('save').innerHTML='Save changes <span>↗</span>';dirtyChanged();$('emergency').disabled=false;poll();}
+  }
+  async function emergency() {
+    if (busy || !state) return;
+    const resuming = Boolean(state.emergency);
+    busy=true; revision++; setEditorBusy(true); $('emergency').disabled=true; $('emergency').textContent=resuming ? 'Resuming…' : 'Requesting full speed…';
+    try { const data=await request(resuming ? '/api/resume' : '/api/emergency',{}); acceptState(data); toast(resuming ? 'Saved profile requested. Check bank status for confirmation.' : 'Full speed requested for all banks. Check bank status for confirmation.'); }
+    catch(error){toast('Could not update cooling override: '+error.message,true);} finally {busy=false;setEditorBusy(false);$('emergency').textContent=state.emergency ? '↙ Resume profile' : '↗ Full speed';$('emergency').disabled=false;dirtyChanged();poll();}
+  }
+  document.addEventListener('click',event=>{
+    const nav=event.target.closest('[data-view]');if(nav){showView(nav.dataset.view);return;}
+    const bank=event.target.closest('[data-channel]');if(bank){selected=Number(bank.dataset.channel);renderChannels();renderEditor();renderTelemetry();return;}
+    if(!draft || busy)return;
+    const mode=event.target.closest('[data-mode]');if(mode){channel().mode=mode.dataset.mode;dirtyChanged();renderEditor();return;}
+    const preset=event.target.closest('[data-preset]');if(preset){channel().curve=clone(presets[preset.dataset.preset]);channel().mode='curve';dirtyChanged();renderEditor();return;}
+    const remove=event.target.closest('[data-remove-point]');if(remove){channel().curve.splice(Number(remove.dataset.removePoint),1);dirtyChanged();renderPointTable();renderGraph();return;}
+    const swatch=event.target.closest('[data-color]');if(swatch){channel().lighting.color=swatch.dataset.color;dirtyChanged();renderLighting();}
+  });
+  $('temperature-source').addEventListener('change',event=>{channel().source=event.target.value;dirtyChanged();renderTelemetry();});
+  $('bank-name').addEventListener('input',event=>{channel().name=event.target.value;dirtyChanged();renderChannels();$('selected-label').textContent=`CHANNEL ${String(selected+1).padStart(2,'0')} / ${channel().name || 'Fan bank'}`;});
+  $('fan-count').addEventListener('change',event=>{channel().fan_count=Number(event.target.value);dirtyChanged();renderChannels();renderLighting();});
+  $('fixed-duty').addEventListener('input',event=>{channel().fixed_duty=Number(event.target.value);$('fixed-value').textContent=event.target.value;dirtyChanged();});
+  $('copy-all').addEventListener('click',()=>{const source=clone(channel());draft.channels.forEach(c=>{c.mode=source.mode;c.source=source.source;c.curve=clone(source.curve);c.fixed_duty=source.fixed_duty;});dirtyChanged();toast('Cooling settings copied to all banks. Save to apply.');});
+  $('copy-lighting').addEventListener('click',()=>{const lighting=clone(channel().lighting);draft.channels.forEach(c=>{c.lighting=clone(lighting);});dirtyChanged();toast('Lighting copied to all banks. Save to apply.');});
+  $('lighting-mode').addEventListener('change',event=>{channel().lighting.mode=event.target.value;dirtyChanged();renderLighting();});
+  $('lighting-color').addEventListener('input',event=>{channel().lighting.color=event.target.value;dirtyChanged();renderLighting();});
+  $('lighting-brightness').addEventListener('input',event=>{channel().lighting.brightness=Number(event.target.value);dirtyChanged();renderLighting();});
+  $('point-table').addEventListener('change',event=>{const el=event.target;if(el.dataset.pointTemp!==undefined||el.dataset.pointDuty!==undefined){const index=Number(el.dataset.pointTemp??el.dataset.pointDuty);const p=channel().curve[index],value=Number(el.value);if(el.value!==''&&finite(value))setPoint(index,el.dataset.pointTemp!==undefined?value:p.temp,el.dataset.pointDuty!==undefined?value:p.duty);renderPointTable();renderGraph();}});
+  $('add-point').addEventListener('click',()=>{const points=channel().curve;if(points.length>=10)return;let index=-1,gap=1;for(let i=0;i<points.length-1;i++)if(points[i+1].temp-points[i].temp>gap){gap=points[i+1].temp-points[i].temp;index=i;}if(index===-1){toast('There is no space between the existing points.',true);return;}points.splice(index+1,0,{temp:Math.floor((points[index].temp+points[index+1].temp)/2),duty:Math.round((points[index].duty+points[index+1].duty)/2)});dirtyChanged();renderPointTable();renderGraph();});
+  $('curve-chart').addEventListener('pointerdown',event=>{const group=event.target.closest('[data-point]');if(!group)return;event.preventDefault();dragging={index:Number(group.dataset.point),pointerId:event.pointerId};$('curve-chart').setPointerCapture(event.pointerId);});
+  $('curve-chart').addEventListener('pointermove',event=>{if(dragging===null||event.pointerId!==dragging.pointerId)return;const point=$('curve-chart').createSVGPoint();point.x=event.clientX;point.y=event.clientY;const pos=point.matrixTransform($('curve-chart').getScreenCTM().inverse());setPoint(dragging.index,chart.minTemp+(pos.x-chart.left)/(chart.right-chart.left)*(chart.maxTemp-chart.minTemp),chart.minDuty+(chart.bottom-pos.y)/(chart.bottom-chart.top)*(chart.maxDuty-chart.minDuty));const active=dragging;dragging=null;renderGraph();dragging=active;});
+  function endDrag(){if(dragging===null)return;dragging=null;dirtyChanged();renderPointTable();renderGraph();}
+  $('curve-chart').addEventListener('pointerup',endDrag);$('curve-chart').addEventListener('pointercancel',endDrag);$('curve-chart').addEventListener('lostpointercapture',endDrag);
+  $('curve-chart').addEventListener('keydown',event=>{const group=event.target.closest('[data-point]');if(!group||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key))return;event.preventDefault();const index=Number(group.dataset.point),p=channel().curve[index],step=event.shiftKey?5:1;setPoint(index,p.temp+(event.key==='ArrowRight'?step:event.key==='ArrowLeft'?-step:0),p.duty+(event.key==='ArrowUp'?step:event.key==='ArrowDown'?-step:0));renderPointTable();renderGraph();$('curve-chart').querySelector(`[data-point="${index}"] .chart-point`).focus();});
+  $('save').addEventListener('click',save);$('emergency').addEventListener('click',emergency);
+  $('discard').addEventListener('click',()=>{if(busy)return;draft=clone(state.config);dirtyChanged();renderEditor();renderTelemetry();toast('Unsaved changes discarded.');});
+
+
+  function targetMaxFans(){
+    const found=catalog?.devices||[],serial=draft?.controller?.serial;
+    const fallback={allow_untested:false,serial:null};
+    if(state?.controller?.connected && JSON.stringify(draft?.controller||fallback)===JSON.stringify(state?.config.controller||fallback)) return state.controller.max_fans_per_bank||4;
+    const candidates=found.filter(d=>(!serial||d.serial===serial)&&(d.hardware_tested||draft?.controller?.allow_untested));
+    return candidates.length===1?candidates[0].max_fans_per_bank||4:state?.controller?.max_fans_per_bank||4;
+  }
+  function renderDevices(){
+    if(!draft)return;
+    const select=$('controller-serial'),chosen=draft.controller?.serial||'';
+    const found=catalog?.devices||[], unique=new Map();
+    for(const d of found) if(d.serial && !unique.has(d.serial))unique.set(d.serial,d);
+    let options='<option value="">Automatic · one eligible controller</option>';
+    for(const [serial,d] of unique) options+=`<option value="${esc(serial)}">${esc(d.model_name||d.name)} · ${esc(serial)}</option>`;
+    if(chosen&&!unique.has(chosen))options+=`<option value="${esc(chosen)}">${esc(chosen)} · currently unavailable</option>`;
+    if(select.innerHTML!==options)select.innerHTML=options;select.value=chosen;
+    if(catalog?.models)$('supported-models').innerHTML=catalog.models.map(m=>`<li><div><strong>${esc(m.name||m.model_name)}</strong><span>0cf2:${usbHex(m.product_id)} · ${m.lighting_supported?'Cooling + lighting':'Cooling · lighting unchanged'}</span></div><span class="verification-badge${m.hardware_tested?' tested':''}">${m.hardware_tested?'Hardware tested':'Untested'}</span></li>`).join('');
+  }
+  async function discoverDevices(){
+    if(discovering)return;discovering=true;$('refresh-devices').disabled=true;$('discovery-status').textContent='Looking for compatible controllers…';
+    try{const data=await request('/api/devices');if(!Array.isArray(data.devices)||!Array.isArray(data.models))throw new Error('The service did not return a controller catalog.');catalog=data;renderDevices();if(draft)renderEditor();$('discovery-status').textContent=data.demo?'Discovery is paused in preview mode.':data.devices.length?`${data.devices.length} compatible controller${data.devices.length===1?'':'s'} found. Selection changes apply when you save.`:'No compatible controller found. Check its USB cable and access permissions.';}
+    catch(e){$('discovery-status').textContent='Discovery unavailable. '+e.message;}
+    finally{discovering=false;$('refresh-devices').disabled=false;}
+  }
+  $('refresh-devices').addEventListener('click',discoverDevices);
+  $('controller-serial').addEventListener('change',event=>{draft.controller={...(draft.controller||{allow_untested:false}),serial:event.target.value||null};dirtyChanged();renderEditor();});
+  $('allow-untested').addEventListener('change',event=>{draft.controller={...(draft.controller||{serial:null}),allow_untested:event.target.checked};dirtyChanged();renderEditor();});
+  function renderApplyStatus() {
+    if (awaitingApply===null) return;
+    const el=$('apply-status');el.hidden=false;el.dataset.state='pending';
+    if(state.controller?.error && state.controller?.connected){el.textContent='Profile needs attention · '+state.controller.error;el.dataset.state='error';}
+    else if(state.demo){el.textContent='Profile saved · preview mode sends no hardware commands';awaitingApply=null;}
+    else if(!failure && state.controller?.connected && state.applied_revision>=awaitingApply){el.textContent=state.controller.lighting_supported?'✓ Profile applied to controller':'✓ Cooling applied · existing lighting unchanged';el.dataset.state='applied';awaitingApply=null;}
+    else el.textContent=failure || !state.controller?.connected ? 'Profile saved · waiting for controller' : 'Profile saved · applying to controller…';
+    if(awaitingApply===null) setTimeout(()=>{if(awaitingApply===null)el.hidden=true;},6000);
+  }
+  function feedback(message,error=false){$('settings-feedback').textContent=message;$('settings-feedback').classList.toggle('error',error);}
+  function download(name,value){const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+  function validateImported(c){
+    if(!c || !Array.isArray(c.channels) || c.channels.length!==4 || ![1000,2000,3000,4000,5000].includes(c.poll_ms)) throw new Error('Use a W-Connect profile with four banks and a valid control interval.');
+    for(const bank of c.channels){
+      if(typeof bank.name!=='string'||!bank.name.trim()||[...bank.name].length>40||/[\u0000-\u001f\u007f]/.test(bank.name))throw new Error('Bank names need 1–40 printable characters.');
+      if(![1,2,3,4,5,6].includes(bank.fan_count)||!['curve','fixed'].includes(bank.mode)||!['cpu','gpu','max'].includes(bank.source)||!Number.isInteger(bank.fixed_duty)||bank.fixed_duty<40||bank.fixed_duty>100)throw new Error('The profile contains invalid bank settings.');
+      const points=bank.curve;
+      if(!Array.isArray(points)||points.length<2||points.length>10||points.some((p,i)=>!finite(p.temp)||!finite(p.duty)||p.temp<20||p.temp>85||p.duty<40||p.duty>100||(i>0&&(p.temp<=points[i-1].temp||p.duty<points[i-1].duty)))||points.at(-1).duty!==100)throw new Error('Curves must rise safely from 40% and reach 100% by 85°C.');
+      const l=bank.lighting;if(!l||!['preserve','static','rainbow','off'].includes(l.mode)||!/^#[0-9a-f]{6}$/i.test(l.color)||!Number.isInteger(l.brightness)||l.brightness<0||l.brightness>100)throw new Error('The profile contains invalid lighting settings.');
+    }
+    // Select only supported fields; never pass extra imported data to hardware.
+    return {controller:clone(draft?.controller || {allow_untested:false,serial:null}),poll_ms:c.poll_ms,channels:c.channels.map(b=>({name:b.name,fan_count:b.fan_count,mode:b.mode,source:b.source,fixed_duty:b.fixed_duty,curve:b.curve.map(p=>({temp:p.temp,duty:p.duty})),lighting:{mode:b.lighting.mode,color:b.lighting.color,brightness:b.lighting.brightness}}))};
+  }
+  for(const [id,key] of [['theme-preference','theme'],['motion-preference','motion']]) $(id).addEventListener('change',event=>{preferences[key]=event.target.value;applyPreferences();try{localStorage.setItem('w-connect-preferences',JSON.stringify(preferences));}catch{toast('Preference applied for this session; browser storage is unavailable.',true);}});
+  $('poll-interval').addEventListener('change',event=>{draft.poll_ms=Number(event.target.value);dirtyChanged();});
+  $('export-profile').addEventListener('click',()=>{download('w-connect-profile.json',{format:'w-connect-profile',version:1,config:draft});feedback('Profile exported, including your current edits.');});
+  $('import-profile').addEventListener('click',()=>$('profile-file').click());
+  $('profile-file').addEventListener('change',async event=>{const file=event.target.files[0];if(!file)return;try{if(file.size>65536)throw new Error('Choose a profile smaller than 64 KB.');const data=JSON.parse(await file.text());if(data.format!=='w-connect-profile'||data.version!==1)throw new Error('This is not a supported W-Connect profile.');draft=validateImported(data.config);dirtyChanged();renderEditor();renderTelemetry();feedback('Profile imported as a draft. Review your banks, then Save changes to apply.');}catch(error){feedback(error.message,true);}finally{event.target.value='';}});
+  $('export-diagnostics').addEventListener('click',()=>{download('w-connect-diagnostics.json',{version:state.version,platform:state.platform,controller:state.controller,sensors:state.sensors,channels:state.channels,events:state.events,uptime_secs:state.uptime_secs});toast('Diagnostics exported. Includes controller identity and sensor readings.');});
+  $('color-hex').addEventListener('change',event=>{const value=event.target.value.trim();if(!/^#[0-9a-f]{6}$/i.test(value)){event.target.setAttribute('aria-invalid','true');toast('Enter a color as #RRGGBB, for example #67C8DF.',true);return;}event.target.removeAttribute('aria-invalid');channel().lighting.color=value.toLowerCase();dirtyChanged();renderLighting();});
+  $('undo').addEventListener('click',()=>{if(busy||!undoStack.length)return;draft=undoStack.pop();dirtyChanged(false);renderEditor();renderTelemetry();});
+  $('retry-connection').addEventListener('click',()=>{poll();});
+  document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();save();}if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='z'&&!event.target.matches('input,textarea')){event.preventDefault();$('undo').click();}});
+  window.addEventListener('beforeunload',event=>{if(dirty){event.preventDefault();event.returnValue='';}});
+  window.addEventListener('resize',()=>{if(draft && !dragging)renderGraph();});
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll();});
+  poll();
+})();
