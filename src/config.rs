@@ -137,7 +137,8 @@ impl Config {
             if c.curve.last().unwrap().duty != 100. {
                 return Err("Curves must end at 100% by 85°C".into());
             }
-            if !["preserve", "static", "rainbow", "off"].contains(&c.lighting.mode.as_str())
+            if !["preserve", "static", "breathing", "rainbow", "off"]
+                .contains(&c.lighting.mode.as_str())
                 || c.lighting.brightness > 100
             {
                 return Err("Invalid lighting mode or brightness".into());
@@ -214,6 +215,27 @@ mod tests {
         assert_eq!(interpolate(p, 0.), 40.);
         assert_eq!(interpolate(p, 40.), 42.5);
         assert_eq!(interpolate(p, 100.), 100.);
+    }
+    #[test]
+    fn native_lighting_profile_survives_save_and_reload() {
+        let mut c = Config::default();
+        c.channels[0].lighting = Lighting {
+            mode: "breathing".into(),
+            color: "#67c8df".into(),
+            brightness: 75,
+        };
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir =
+            std::env::temp_dir().join(format!("w-connect-lighting-{}-{nonce}", std::process::id()));
+        let file = dir.join("config.json");
+        c.save(&file).unwrap();
+        let restored: Config = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+        assert_eq!(restored, c);
+        restored.validate().unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
     }
     #[test]
     fn rejects_unsafe_and_malformed_config() {

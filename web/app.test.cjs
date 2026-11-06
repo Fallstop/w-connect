@@ -119,7 +119,7 @@ test('settings preferences persist independently and interval changes can be und
  const app=await setup();try{app.click('[data-view="system"]');await flush();app.input('theme-preference','dark','change');assert.equal(app.document.documentElement.dataset.theme,'dark');app.input('motion-preference','reduce','change');assert.equal(app.document.documentElement.dataset.motion,'reduce');assert.equal(app.document.getElementById('save-bar').hidden,true);app.input('poll-interval','5000','change');assert.equal(app.document.getElementById('save-bar').hidden,false);app.click('#undo');assert.equal(app.document.getElementById('poll-interval').value,'2000');assert.equal(app.document.getElementById('save-bar').hidden,true);assert.equal(app.requests.filter(r=>r.options.method==='POST').length,0);}finally{app.close();}
 });
 test('import rejects unsafe data and stages a valid profile without writing hardware',async()=>{
- const app=await setup();try{const input=app.document.getElementById('profile-file');const profile={format:'w-connect-profile',version:1,config:fresh().config};profile.config.channels[0].fixed_duty=0;async function choose(value){Object.defineProperty(input,'files',{configurable:true,value:[{size:500,text:async()=>JSON.stringify(value)}]});input.dispatchEvent(new app.window.Event('change'));await flush();}await choose(profile);assert.match(app.document.getElementById('settings-feedback').textContent,/invalid bank/);assert.equal(app.document.getElementById('save-bar').hidden,true);profile.config.channels[0].fixed_duty=60;profile.config.channels[0].name='Imported';await choose(profile);assert.equal(app.document.getElementById('bank-name').value,'Imported');assert.equal(app.document.getElementById('save-bar').hidden,false);assert.equal(app.requests.filter(r=>r.options.method==='POST').length,0);}finally{app.close();}
+ const app=await setup();try{const input=app.document.getElementById('profile-file');const profile={format:'w-connect-profile',version:1,config:fresh().config};profile.config.channels[0].fixed_duty=0;async function choose(value){Object.defineProperty(input,'files',{configurable:true,value:[{size:500,text:async()=>JSON.stringify(value)}]});input.dispatchEvent(new app.window.Event('change'));await flush();}await choose(profile);assert.match(app.document.getElementById('settings-feedback').textContent,/invalid bank/);assert.equal(app.document.getElementById('save-bar').hidden,true);profile.config.channels[0].fixed_duty=60;profile.config.channels[0].name='Imported';profile.config.channels[0].lighting.mode='breathing';await choose(profile);assert.equal(app.document.getElementById('lighting-mode').value,'breathing');assert.equal(app.document.getElementById('bank-name').value,'Imported');assert.equal(app.document.getElementById('save-bar').hidden,false);assert.equal(app.requests.filter(r=>r.options.method==='POST').length,0);}finally{app.close();}
 });
 
 test('lighting bank selection and numeric curve edits preserve their focused controls',async()=>{
@@ -175,5 +175,29 @@ test('compact bank selector retains drafts and range progress matches controls',
     assert.equal(app.document.getElementById('fixed-duty').style.getPropertyValue('--range-fill'),'50%');
     await app.poll();assert.equal(app.document.getElementById('fixed-duty').value,'70');
     assert.equal(app.requests.filter(r=>r.options?.method==='POST').length,0);
+  }finally{app.close();}
+});
+
+test('SL lighting previews frame strips and saves a native breathing effect',async()=>{
+  const app=await setup();try{
+    app.click('[data-view="lighting"]');app.input('lighting-mode','breathing','change');
+    const preview=app.document.getElementById('lighting-preview');
+    assert.equal(preview.dataset.layout,'sl-frame');
+    assert.equal(preview.querySelectorAll('.led-strip path').length,3);
+    assert.equal(preview.querySelectorAll('.led-strip circle').length,0);
+    assert.equal(app.document.getElementById('color-controls').hidden,false);
+    assert(preview.classList.contains('is-breathing'));
+    assert.equal(app.document.getElementById('brightness-label').textContent,'75%');
+    assert.equal(preview.style.getPropertyValue('--led-opacity'),'0.75');
+    app.click('#save');await flush();
+    const saved=JSON.parse(app.requests.find(r=>r.url==='/api/config').options.body);
+    assert.equal(saved.channels[0].lighting.mode,'breathing');
+    app.backend.controller.pid=0xa102;await app.poll();
+    // Other controller families retain a generic preview rather than showing SL geometry.
+    assert.equal(preview.dataset.layout,'ring');
+    assert.equal(preview.querySelectorAll('.led-strip circle').length,3);
+    app.input('lighting-mode','rainbow','change');
+    assert.equal(app.document.getElementById('color-controls').hidden,true);
+    assert.match(preview.querySelector('.led-output').getAttribute('stroke'),/^url\(#fan-\d+-spectrum\)$/);
   }finally{app.close();}
 });

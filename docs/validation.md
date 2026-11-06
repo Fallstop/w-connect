@@ -15,8 +15,8 @@ Host: Manjaro Linux x86_64; UNI FAN SL v1.8, USB `0cf2:a100`, interface1. CPU te
 
 ## Automated validation
 
-- Sixteen Rust unit tests (0.2): packet encoding and channel selection, descriptor matching, RPM parsing/rejection, RBG lighting, fan-count limits, thermal override/missing sensors/stale data, ramp-down, interpolation, configuration validation and origin protection.
-- Fourteen DOM behavior tests (current source): real/stale telemetry, draft preservation, save headers, emergency/resume, curve constraints, demo mode, unsupported lighting, critical-temperature notices.
+- Eighteen Rust unit tests (current source): packet encoding and channel selection, descriptor matching, RPM parsing/rejection, RBG lighting, fan-count limits, thermal override/missing sensors/stale data, ramp-down, interpolation, configuration validation and origin protection.
+- Fifteen DOM behavior tests (current source): real/stale telemetry, draft preservation, save headers, emergency/resume, curve constraints, demo mode, unsupported lighting, critical-temperature notices.
 - Rust formatting, Clippy with warnings denied, JavaScript syntax and release build.
 - Review by separate agents cross-checked protocol against vendor decompilation and prior art, then examined control-loop safety and installers.
 
@@ -27,6 +27,14 @@ The original mixed-functionality design ratings were superseded by [fresh-contex
 The neutral-theme revision passed browser checks across six view/theme combinations and 360, 390, 768, 1280 and 1440 px widths. Status changes (normal, hot, sensor unavailable, connection lost, recovery) left header and cooling-control geometry unchanged. The action footer did not overlap scrolling content. Keyboard curve editing, draft retention and reduced-motion handling passed. Axe reported zero A/AA findings. Both fonts are embedded, licensed and served locally. The extracted Linux package passed its USB-free smoke test with the new font routes.
 
 Additional driver tests cover exact family-specific PWM registers, legacy output transport, V2 RPM offsets, independent lighting rings, six-fan quantities, frame commits, spectrum palettes, descriptor validation, unknown-ID rejection, opt-in and unique selection. UI tests cover explicit activation, six-fan capability refresh and ensuring imports do not grant untested-driver permission. The original SL transfers remain covered by regression fixtures. A post-expansion browser scan, including the expanded controller catalog, also reported zero A/AA findings across all six view/theme combinations. The installed0.2 release reconnected to the actual SL hub, read both populated banks, returned the seven-model catalog with untested support disabled, and rejected a six-fan configuration for the four-fan SL model before any hardware change.
+
+## Controller-resident lighting
+
+SL v1 `0cf2:a100` was tested again with native breathing on the top bank while the bottom bank retained rainbow. After a clean service stop, process lookup confirmed that no `w-connect` process remained. The camera recorded 30 seconds at two frames per second: the top frame strips completed repeated red breathing cycles, and the bottom rainbow continued moving. This demonstrates controller-resident effects while powered, independently of both UI and service. The preview now uses SL frame strips, and its breathing period approximates the observed cycle.
+
+Restarting the service loaded and applied the saved breathing profile. The original rainbow profile was then restored and confirmed identical to the pre-test configuration. The populated banks read approximately 1800/1770 RPM afterward; clean stop had requested full cooling. Camera footage and credentials remain private and excluded from source/distribution.
+
+No system shutdown, SATA-power removal or firmware flash was performed. Controller persistence after complete power removal remains unverified; no nonvolatile-save command was found. See [controller-memory evidence](protocol.md#controller-memory-and-application-exit).
 
 ## Windows
 

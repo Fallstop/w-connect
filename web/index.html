@@ -309,6 +309,7 @@
                 ><select id="lighting-mode">
                   <option value="preserve">Keep current</option>
                   <option value="static">Static color</option>
+                  <option value="breathing">Breathing</option>
                   <option value="rainbow">Rainbow</option>
                   <option value="off">Off</option>
                 </select>
@@ -364,10 +365,18 @@
                   Copy to all banks
                 </button>
                 <details class="control-note">
-                  <summary>Hardware sync</summary>
+                  <summary>On-device effects</summary>
                   <p>
-                    Saving a lighting change disables motherboard RGB sync for
-                    this controller.
+                    Save uploads the effect to the controller. It keeps running
+                    after W-Connect exits while the controller stays powered.
+                  </p>
+                  <p>
+                    The saved profile is restored when W-Connect starts.
+                    Retention after power loss is unverified.
+                  </p>
+                  <p>
+                    Animation timing is approximate in this preview. Applying
+                    lighting disables motherboard RGB sync.
                   </p>
                 </details>
               </fieldset>

@@ -1053,20 +1053,7 @@ input[type="range"]:disabled {
 .lighting-preview.is-preserve .fan-unit {
   color: var(--fan-stroke);
 }
-.lighting-preview.is-rainbow .fan-unit {
-  animation: spectrum-flow 12s linear infinite;
-}
-.lighting-preview.is-rainbow .fan-unit:nth-child(3n + 1) {
-  color: #8bb9d0;
-}
-.lighting-preview.is-rainbow .fan-unit:nth-child(3n + 2) {
-  color: #c7b6ed;
-  animation-delay: -4s;
-}
-.lighting-preview.is-rainbow .fan-unit:nth-child(3n) {
-  color: #e4ad99;
-  animation-delay: -8s;
-}
+
 fieldset {
   border: 0;
   padding: 0;
@@ -1574,18 +1561,7 @@ body.has-draft .toast {
     stroke-dashoffset: 100;
   }
 }
-@keyframes spectrum-flow {
-  0%,
-  100% {
-    color: #8bb9d0;
-  }
-  33% {
-    color: #c7b6ed;
-  }
-  66% {
-    color: #e4ad99;
-  }
-}
+
 @media (min-width: 1600px) {
   main {
     padding-top: 38px;
@@ -2526,4 +2502,39 @@ input[type="number"] {
   flex-shrink: 0;
   font-size: 12px;
   white-space: nowrap;
+}
+
+/* The SL's diffusers sit on the frame; its hub and blades are unlit. */
+.led-output {
+  opacity: var(--led-opacity, 1);
+}
+.led-glow {
+  stroke-width: 4;
+  opacity: 0.2;
+  filter: blur(0.7px);
+}
+.lighting-preview.is-rainbow .led-motion {
+  animation: led-spectrum 6s linear infinite;
+  animation-delay: var(--phase, 0s);
+}
+.lighting-preview.is-breathing .led-motion {
+  animation: led-breath 11s ease-in-out infinite;
+}
+.lighting-preview.is-off .led-output,
+.lighting-preview.is-preserve .led-output {
+  opacity: 0;
+}
+@keyframes led-spectrum {
+  to {
+    filter: hue-rotate(-360deg);
+  }
+}
+@keyframes led-breath {
+  0%,
+  100% {
+    opacity: 0.08;
+  }
+  50% {
+    opacity: 1;
+  }
 }

@@ -780,6 +780,32 @@ mod tests {
         }
     }
     #[test]
+    fn breathing_uploads_native_effect_and_one_color_buffer() {
+        let packets = lighting_reports(model(0xa100), 0, 3, "breathing", [17, 34, 51], 70).unwrap();
+        assert!(packets.contains(&Packet::Control(vec![0xe0, 0x10, 2, 0, 0, 1])));
+        let colors: Vec<_> = packets
+            .iter()
+            .filter_map(|packet| {
+                if let Packet::Color(colors) = packet {
+                    Some(colors)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(colors.len(), 1);
+        assert_eq!(&colors[0][..2], &[0xe0, 0x30]);
+        for led in colors[0][2..146].as_chunks::<3>().0 {
+            assert_eq!(led, &[17, 51, 34]);
+        }
+        assert!(colors[0][146..].iter().all(|byte| *byte == 0));
+        assert_eq!(
+            packets.last(),
+            Some(&Packet::Control(vec![0xe0, 0x60, 0, 1]))
+        );
+        assert_eq!(packets.len(), 6);
+    }
+    #[test]
     fn brightness_off_and_model_fan_limits() {
         for (percent, encoded) in [(0, 8), (25, 3), (50, 2), (75, 1), (100, 0)] {
             let p = lighting_reports(model(0xa100), 0, 1, "rainbow", [0; 3], percent).unwrap();

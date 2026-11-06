@@ -60,12 +60,23 @@
     return finite(sensors.cpu) && finite(sensors.gpu) ? Math.max(sensors.cpu,sensors.gpu) : null;
   }
   let fanId=0;
-  function fanSVG(index) {
+  function lightingLayout() {
+    const pid=state?.controller?.pid;
+    const id=typeof pid==='number'?pid:Number.parseInt(pid,16);
+    return [0xa100,0x7750,0xa103,0xa105].includes(id)?'sl-frame':'ring';
+  }
+  function hardwareBrightness(value) {return value===0?0:clamp(Math.round(value/25)*25,25,100);}
+  function fanSVG(index, layout, mode) {
     const id=`fan-${++fanId}`;
-    return `<svg class="fan-unit" viewBox="0 0 64 64" aria-hidden="true">
-      <defs><linearGradient id="${id}-frame" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#3c3c43"/><stop offset=".45" stop-color="#25252b"/><stop offset="1" stop-color="#1c1c21"/></linearGradient><linearGradient id="${id}-blade" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#50505a"/><stop offset=".45" stop-color="#383840"/><stop offset="1" stop-color="#27272e"/></linearGradient><radialGradient id="${id}-hub" cx=".35" cy=".25"><stop stop-color="#505059"/><stop offset="1" stop-color="#24242b"/></radialGradient><clipPath id="${id}-aperture"><circle cx="32" cy="32" r="23.5"/></clipPath></defs>
-      <rect x="1" y="1" width="62" height="62" rx="6" fill="url(#${id}-frame)" stroke="#52525c" stroke-width=".55"/><rect x="2" y="2" width="60" height="60" rx="5" fill="none" stroke="#6c6c77" stroke-opacity=".3" stroke-width=".35"/><circle cx="32" cy="32" r="26" fill="#0f0f13"/><circle class="fan-glow" cx="32" cy="32" r="25.4"/><circle class="fan-ring" cx="32" cy="32" r="25.4"/><circle cx="32" cy="32" r="23.7" fill="#17171c" stroke="#55555f" stroke-width=".35"/>
+    const edge=layout==='sl-frame';
+    const shape=edge?'<path d="M3 15L12 7H52L61 15M3 49L12 57H52L61 49"/>':'<circle cx="32" cy="32" r="25.4"/>';
+    const spectrum=mode==='rainbow'?`url(#${id}-spectrum)`:'currentColor';
+    return `<svg class="fan-unit" viewBox="0 0 64 64" aria-hidden="true" style="--phase:${-index*1.25}s">
+      <defs><linearGradient id="${id}-frame" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#3c3c43"/><stop offset=".45" stop-color="#25252b"/><stop offset="1" stop-color="#1c1c21"/></linearGradient><linearGradient id="${id}-blade" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#50505a"/><stop offset=".45" stop-color="#383840"/><stop offset="1" stop-color="#27272e"/></linearGradient><radialGradient id="${id}-hub" cx=".35" cy=".25"><stop stop-color="#505059"/><stop offset="1" stop-color="#24242b"/></radialGradient><clipPath id="${id}-aperture"><circle cx="32" cy="32" r="23.5"/></clipPath><linearGradient id="${id}-spectrum" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="64" y2="0"><stop stop-color="#ff4848"/><stop offset=".17" stop-color="#ffcb45"/><stop offset=".34" stop-color="#79e864"/><stop offset=".5" stop-color="#45dfe8"/><stop offset=".67" stop-color="#6387ff"/><stop offset=".84" stop-color="#da65fa"/><stop offset="1" stop-color="#ff4848"/></linearGradient></defs>
+      <rect x="1" y="1" width="62" height="62" rx="6" fill="url(#${id}-frame)" stroke="#52525c" stroke-width=".55"/><rect x="2" y="2" width="60" height="60" rx="5" fill="none" stroke="#6c6c77" stroke-opacity=".3" stroke-width=".35"/><circle cx="32" cy="32" r="25" fill="#0f0f13"/><circle cx="32" cy="32" r="23.7" fill="#17171c" stroke="#55555f" stroke-width=".35"/>
       <g clip-path="url(#${id}-aperture)"><g class="fan-blades">${Array.from({length:7},(_,i) => `<path transform="rotate(${i*360/7+index*17} 32 32)" d="M28 29C20 27 10 24 9 19C10 14 16 11 21 11C24 15 28 19 33 23L35 28Z" fill="url(#${id}-blade)" stroke="#5a5a65" stroke-width=".16"/>`).join('')}</g></g><circle cx="32" cy="32" r="8.2" fill="#121217"/><circle cx="32" cy="32" r="7.3" fill="url(#${id}-hub)" stroke="#62626d" stroke-width=".25"/>
+      <g class="led-diffuser" fill="none" stroke="#55555e" stroke-width="${edge?2.1:1.3}" stroke-linejoin="round">${shape}</g>
+      <g class="led-motion"><g class="led-output" fill="none" stroke="${spectrum}" stroke-linejoin="round"><g class="led-glow">${shape}</g><g class="led-strip" stroke-width="${edge?1.7:1.1}">${shape}</g></g></g>
       ${[[5,5],[59,5],[5,59],[59,59]].map(([x,y])=>`<circle cx="${x}" cy="${y}" r="1.2" fill="#111115" stroke="#62626d" stroke-width=".25"/>`).join('')}<path d="M0 28h2v8H0m62-8h2v8h-2" fill="#55555e"/></svg>`;
   }
   function renderChannels() {
@@ -213,25 +224,28 @@
   function renderLighting() {
     const config = channel(); if (!config) return;
     const lighting = config.lighting || {mode:'preserve',color:'#67c8df',brightness:70};
+    const brightness=hardwareBrightness(lighting.brightness), layout=lightingLayout();
     $('lighting-unsupported').hidden = Boolean(state.controller?.lighting_supported);
     $('lighting-controls').disabled = !state.controller?.lighting_supported;
     $('lighting-mode').value = lighting.mode;
     $('lighting-color').value = lighting.color;
     if (document.activeElement !== $('color-hex')) {$('color-hex').value = lighting.color.toUpperCase();$('color-hex').removeAttribute('aria-invalid');}
     $('color-label').textContent = lighting.color.toUpperCase();
-    $('lighting-brightness').value = lighting.brightness;renderRange($('lighting-brightness'));
-    $('brightness-label').textContent = `${lighting.brightness}%`;
+    $('lighting-brightness').value = brightness;renderRange($('lighting-brightness'));
+    $('brightness-label').textContent = `${brightness}%`;
     $('lighting-brightness').title='Hardware brightness uses 25% steps';
     document.querySelectorAll('[data-color]').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.color.toLowerCase()===lighting.color.toLowerCase())));
-    $('color-controls').hidden = lighting.mode !== 'static';
+    $('color-controls').hidden = !['static','breathing'].includes(lighting.mode);
     $('lighting-brightness').disabled = ['preserve','off'].includes(lighting.mode);
     $('lighting-preview').classList.toggle('is-off',lighting.mode==='off');
     $('lighting-preview').classList.toggle('is-preserve',lighting.mode==='preserve');
     $('lighting-preview').classList.toggle('is-rainbow',lighting.mode==='rainbow');
+    $('lighting-preview').classList.toggle('is-breathing',lighting.mode==='breathing');
+    $('lighting-preview').dataset.layout=layout;
     $('lighting-preview').style.setProperty('--light-color',lighting.color);
-    $('lighting-preview').style.setProperty('--led-opacity',lighting.brightness/100);
-    $('lighting-preview').setAttribute('aria-label',`${config.fan_count} fans. ${lighting.mode==='preserve'?'Current lighting is not read back':lighting.mode==='off'?'Lights off':`${lighting.mode} lighting preview, ${lighting.brightness}% brightness`}.`);
-    $('lighting-preview').innerHTML = `<div class="fan-bank">${Array.from({length:clamp(config.fan_count || 1,1,6)},(_,index)=>fanSVG(index)).join('')}</div><span class="preview-caption">${lighting.mode==='preserve'?'Current hardware lighting is not read back':''}</span>`;
+    $('lighting-preview').style.setProperty('--led-opacity',brightness/100);
+    $('lighting-preview').setAttribute('aria-label',`${layout==='sl-frame'?'SL frame lighting':'Simplified lighting layout'}, ${config.fan_count} fans. ${lighting.mode==='preserve'?'Current lighting is not read back':lighting.mode==='off'?'Lights off':`${lighting.mode} lighting preview, ${brightness}% brightness`}.`);
+    $('lighting-preview').innerHTML = `<div class="fan-bank">${Array.from({length:clamp(config.fan_count || 1,1,6)},(_,index)=>fanSVG(index,layout,lighting.mode)).join('')}</div><span class="preview-caption">${lighting.mode==='preserve'?'Current hardware lighting is not read back':''}</span>`;
   }
   function renderSystem() {
     const rows = [['Driver verification',state.controller?.hardware_tested === true ? 'Hardware-tested on SL v1 a100' : state.controller?.connected ? 'Protocol-verified · hardware untested' : 'No active controller'],['Application',`W-Connect ${state.version || ''}`],['Platform',state.platform || 'Unknown'],['Controller',state.controller?.name || 'Unavailable'],['USB identifier',`${usbHex(state.controller?.vid)}:${usbHex(state.controller?.pid)}`],['Sensor source',state.sensors?.source || 'Unavailable'],['Polling interval',`${(state.config?.poll_ms || 2000)/1000} seconds`],['Running for',formatUptime(state.uptime_secs)],['Connection',failure ? 'Interrupted' : state.controller?.connected ? 'Connected' : 'Unavailable']];
@@ -259,7 +273,7 @@
     const editingField = document.activeElement?.matches('input, select') || dragging !== null;
     const shouldReset = !draft || reset || (!dirty && !editingField && configChanged);
     if (shouldReset) { draft=clone(state.config); selected=Math.min(selected,draft.channels.length-1); dirty=false; renderEditor(); dirtyChanged(); }
-    if(capabilitiesChanged)renderFanCountOptions();
+    if(capabilitiesChanged){renderFanCountOptions();if(!shouldReset)renderLighting();}
     $('loading').hidden=true;
     showView(view); renderTelemetry();
   }
@@ -382,7 +396,7 @@
       if(![1,2,3,4,5,6].includes(bank.fan_count)||!['curve','fixed'].includes(bank.mode)||!['cpu','gpu','max'].includes(bank.source)||!Number.isInteger(bank.fixed_duty)||bank.fixed_duty<40||bank.fixed_duty>100)throw new Error('The profile contains invalid bank settings.');
       const points=bank.curve;
       if(!Array.isArray(points)||points.length<2||points.length>10||points.some((p,i)=>!finite(p.temp)||!finite(p.duty)||p.temp<20||p.temp>85||p.duty<40||p.duty>100||(i>0&&(p.temp<=points[i-1].temp||p.duty<points[i-1].duty)))||points.at(-1).duty!==100)throw new Error('Curves must rise safely from 40% and reach 100% by 85°C.');
-      const l=bank.lighting;if(!l||!['preserve','static','rainbow','off'].includes(l.mode)||!/^#[0-9a-f]{6}$/i.test(l.color)||!Number.isInteger(l.brightness)||l.brightness<0||l.brightness>100)throw new Error('The profile contains invalid lighting settings.');
+      const l=bank.lighting;if(!l||!['preserve','static','breathing','rainbow','off'].includes(l.mode)||!/^#[0-9a-f]{6}$/i.test(l.color)||!Number.isInteger(l.brightness)||l.brightness<0||l.brightness>100)throw new Error('The profile contains invalid lighting settings.');
     }
     // Select only supported fields; never pass extra imported data to hardware.
     return {controller:clone(draft?.controller || {allow_untested:false,serial:null}),poll_ms:c.poll_ms,channels:c.channels.map(b=>({name:b.name,fan_count:b.fan_count,mode:b.mode,source:b.source,fixed_duty:b.fixed_duty,curve:b.curve.map(p=>({temp:p.temp,duty:p.duty})),lighting:{mode:b.lighting.mode,color:b.lighting.color,brightness:b.lighting.brightness}}))};

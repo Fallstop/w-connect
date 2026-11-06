@@ -80,13 +80,23 @@ These are **SL v1** commands. SL-Infinity and AL use different ring/port layouts
 | Set bank fan quantity | Feature | `e0 10 32 ((c << 4) | count)` |
 | Upload bank colors | Output | `e0 (30 | c) [R B G]…` |
 | Set effect | Feature | `e0 (10 | c) mode speed direction brightness` |
-| Commit | Feature | `e0 60 00 01` |
+| Synchronize animation frame | Feature | `e0 60 00 01` |
 
 The SL v1 has at most four fans per bank and sixteen LED addresses per fan. Static colors repeat each fan's color across its sixteen addresses. Color triplets are **red, blue, green**, not RGB or GRB. The remainder of the 353-byte output report is zero-filled.
 
-W-Connect implements static (`mode=1`), breathing (`2`, available in the driver), rainbow (`5`), and off (static with brightness `8`). Effect speed `0` is medium; direction `0` is left-to-right. Brightness is discrete: `0` = 100%, `1` = 75%, `2` = 50%, `3` = 25%, `8` = off. The app rounds a requested brightness to these hardware levels. `preserve` sends no lighting commands.
+W-Connect implements static (`mode=1`), breathing (`2`), rainbow (`5`), and off (static with brightness `8`). Effect speed `0` is medium; direction `0` is left-to-right. Brightness is discrete: `0` = 100%, `1` = 75%, `2` = 50%, `3` = 25%, `8` = off. The app rounds a requested brightness to these hardware levels. `preserve` sends no lighting commands.
 
 Disabling motherboard sync and leaving merge mode are controller-wide lighting changes. They are necessary for independent bank effects and are applied only when the user requests a lighting change. Fan count is user configuration; it cannot be inferred reliably from one tachometer reading per bank.
+
+### Controller memory and application exit
+
+Static, breathing and rainbow are native controller effects. The host uploads a color buffer and effect settings once; it does not stream animation frames. Closing W-Connect leaves lighting alone. The saved JSON profile is reapplied when the service starts or reconnects.
+
+This is **controller-resident operation while powered**, not a verified write to flash. `E0 60 00 01` sets the animation frame; it is not an EEPROM-save command. No effect/color readback or explicit nonvolatile-save method was found in the SL v1 vendor path. OpenRGB also marks persistent saving as unsupported for this controller. Retention after complete power removal remains unverified.
+
+The [Lian Li FAQ](https://lian-li.com/faq/faq_l-connect-3/) documents continued effects after stopping L-Connect's service. Independent evidence: [OpenRGB SL controller capabilities](https://raw.githubusercontent.com/CalcProgrammer1/OpenRGB/master/Controllers/LianLiController/LianLiUniHubSLController/RGBController_LianLiUniHubSL.cpp), plus vendor `SLFanController.setLightingConfig`, `SLFanDevice.SetFrame` and PC-side `DeviceSettingManager.Save` described in [the interoperability notes](vendor-reverse-engineering.md).
+
+The SL preview uses its angular frame diffusers and unlit blades/hub. Its 32 physical LEDs do not imply 32 independently addressed colors: the verified protocol remains 16 logical addresses per fan. Rainbow/breathing previews approximate timing and LED traversal; they are not hardware readback.
 
 ## Platform requirements and operating policy
 

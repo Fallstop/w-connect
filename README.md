@@ -10,9 +10,10 @@ A small, local controller for **Lian Li UNI FAN hubs**, on Linux and Windows. Na
 - Four independent fan banks with measured RPM, editable names and fan counts.
 - CPU, GPU, or hotter-of-both temperature curves; draggable graph and exact numeric editing.
 - Quiet, balanced and performance presets; fixed speed and full-speed override.
-- Hardware static color, rainbow, brightness and lights off. Existing lighting is preserved until changed. Applying lighting disables motherboard lighting sync and merged lighting globally.
+- Hardware static color, breathing, rainbow, brightness and lights off. Existing lighting is preserved until changed. Applying lighting disables motherboard lighting sync and merged lighting globally.
 - Light/dark/system appearance, reduced motion, configurable control interval, and profile import/export.
 - Stable animations and keyboard focus, undo, exact hex colors, and saved-versus-applied feedback.
+- Native lighting runs on the controller after the app exits while powered; saved profiles restore at startup. Permanent storage across power loss is unverified.
 - Saved configuration, automatic reconnection, desktop launcher and background startup.
 - Cooling continues when you close the page. UI changes are staged until **Save changes**.
 
@@ -52,6 +53,13 @@ The same local interface adapts to smaller windows.
 
 <a href="docs/screenshots/mobile-cooling.png"><img src="docs/screenshots/mobile-cooling.png" width="300" alt="Cooling dashboard in a narrow light-theme layout with stacked temperature readings, fan banks and curve controls"></a>
 <a href="docs/screenshots/mobile-lighting.png"><img src="docs/screenshots/mobile-lighting.png" width="300" alt="Lighting controls in a narrow dark-theme layout with a fan preview, color controls and save bar"></a>
+
+</details>
+
+<details>
+<summary><strong>Native rainbow · SL frame lighting</strong></summary>
+
+[![SL fan frame strips showing the native rainbow effect with brightness and controller-effect settings](docs/screenshots/lighting-rainbow.png)](docs/screenshots/lighting-rainbow.png)
 
 </details>
 
