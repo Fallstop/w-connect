@@ -201,3 +201,26 @@ test('SL lighting previews frame strips and saves a native breathing effect',asy
     assert.match(preview.querySelector('.led-output').getAttribute('stroke'),/^url\(#fan-\d+-spectrum\)$/);
   }finally{app.close();}
 });
+
+test('inline picker retains hue through black and saves the chosen colour only on Save',async()=>{
+ const app=await setup();try{
+  app.click('[data-view="lighting"]');app.input('lighting-mode','breathing','change');
+  app.input('color-hex','#ff0000','change');
+  assert.equal(app.document.getElementById('color-saturation').value,'100');
+  app.input('color-hue','120');
+  assert.equal(app.document.getElementById('color-hex').value,'#00FF00');
+  app.input('color-value','0');app.input('color-hue','240');
+  assert.equal(app.document.getElementById('color-hex').value,'#000000');
+  app.input('color-value','100');
+  assert.equal(app.document.getElementById('color-hex').value,'#0000FF');
+  app.input('color-saturation','0');
+  assert.equal(app.document.getElementById('color-hex').value,'#FFFFFF');
+  app.input('color-saturation','100');
+  assert.equal(app.document.getElementById('color-hex').value,'#0000FF');
+  assert.equal(app.requests.filter(r=>r.options?.method==='POST').length,0);
+  app.click('#save');await flush();
+  const saved=JSON.parse(app.requests.find(r=>r.url==='/api/config').options.body);
+  assert.equal(saved.channels[0].lighting.color,'#0000ff');
+  assert.equal(saved.channels[0].lighting.mode,'breathing');
+ }finally{app.close();}
+});

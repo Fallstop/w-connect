@@ -315,6 +315,45 @@
                 </select>
                 <div id="color-controls">
                   <label for="lighting-color">Color</label>
+                  <div class="color-picker">
+                    <div
+                      id="color-plane"
+                      class="color-plane"
+                      aria-label="Color field"
+                    >
+                      <span id="color-cursor" aria-hidden="true"></span>
+                      <input
+                        id="color-saturation"
+                        class="sr-only"
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="1"
+                        aria-label="Color saturation"
+                      />
+                      <input
+                        id="color-value"
+                        class="sr-only"
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="1"
+                        aria-label="Color value"
+                      />
+                      <output
+                        id="color-keyboard-value"
+                        aria-hidden="true"
+                      ></output>
+                    </div>
+                    <input
+                      id="color-hue"
+                      type="range"
+                      min="0"
+                      max="360"
+                      step="1"
+                      aria-label="Color hue"
+                    />
+                  </div>
                   <div class="color-input">
                     <input
                       id="lighting-color"

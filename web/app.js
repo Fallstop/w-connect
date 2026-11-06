@@ -221,6 +221,40 @@
     dirtyChanged();
   }
   function renderRange(input){input.style.setProperty('--range-fill',`${(Number(input.value)-Number(input.min))/(Number(input.max)-Number(input.min))*100}%`);}
+  let pickerHSV={h:0,s:0,v:100}, pickerColor=null, colorPointer=null;
+  function colorToHSV(hex) {
+    const [r,g,b]=hex.slice(1).match(/../g).map(v=>parseInt(v,16)/255);
+    const max=Math.max(r,g,b), min=Math.min(r,g,b), d=max-min;
+    const h=d===0?pickerHSV.h:((max===r?(g-b)/d:max===g?(b-r)/d+2:(r-g)/d+4)*60+360)%360;
+    return {h,s:max?d/max*100:0,v:max*100};
+  }
+  function hsvToColor({h,s,v}) {
+    const c=v/100*s/100, x=c*(1-Math.abs((h/60)%2-1)), m=v/100-c;
+    const rgb=[[c,x,0],[x,c,0],[0,c,x],[0,x,c],[x,0,c],[c,0,x]][Math.floor(h/60)%6];
+    return '#'+rgb.map(n=>Math.round((n+m)*255).toString(16).padStart(2,'0')).join('');
+  }
+  function renderColorPicker(color) {
+    if(color!==pickerColor){pickerHSV=colorToHSV(color);pickerColor=color;}
+    const {h,s,v}=pickerHSV;
+    $('color-plane').style.setProperty('--picker-hue',`hsl(${h} 100% 50%)`);
+    $('color-cursor').style.left=`${s}%`;
+    $('color-cursor').style.top=`${100-v}%`;
+    $('color-cursor').style.background=color;
+    for(const [id,value,unit] of [['color-hue',h,'degrees'],['color-saturation',s,'percent'],['color-value',v,'percent']]) {
+      $(id).value=Math.round(value);$(id).setAttribute('aria-valuetext',`${Math.round(value)} ${unit}`);
+    }
+  }
+  function updatePicker() {
+    pickerColor=hsvToColor(pickerHSV);channel().lighting.color=pickerColor;
+    dirtyChanged();renderLighting();
+  }
+  function pickPosition(event) {
+    const rect=$('color-plane').getBoundingClientRect();
+    if(!rect.width||!rect.height)return;
+    pickerHSV.s=clamp((event.clientX-rect.left)/rect.width*100,0,100);
+    pickerHSV.v=100-clamp((event.clientY-rect.top)/rect.height*100,0,100);
+    updatePicker();
+  }
   function renderLighting() {
     const config = channel(); if (!config) return;
     const lighting = config.lighting || {mode:'preserve',color:'#67c8df',brightness:70};
@@ -229,6 +263,7 @@
     $('lighting-controls').disabled = !state.controller?.lighting_supported;
     $('lighting-mode').value = lighting.mode;
     $('lighting-color').value = lighting.color;
+    renderColorPicker(lighting.color);
     if (document.activeElement !== $('color-hex')) {$('color-hex').value = lighting.color.toUpperCase();$('color-hex').removeAttribute('aria-invalid');}
     $('color-label').textContent = lighting.color.toUpperCase();
     $('lighting-brightness').value = brightness;renderRange($('lighting-brightness'));
@@ -338,6 +373,17 @@
   $('copy-all').addEventListener('click',()=>{const source=clone(channel());draft.channels.forEach(c=>{c.mode=source.mode;c.source=source.source;c.curve=clone(source.curve);c.fixed_duty=source.fixed_duty;});dirtyChanged();toast('Copied to all banks.');});
   $('copy-lighting').addEventListener('click',()=>{const lighting=clone(channel().lighting);draft.channels.forEach(c=>{c.lighting=clone(lighting);});dirtyChanged();toast('Copied to all banks.');});
   $('lighting-mode').addEventListener('change',event=>{channel().lighting.mode=event.target.value;dirtyChanged();renderLighting();});
+  for(const [id,key] of [['color-hue','h'],['color-saturation','s'],['color-value','v']]) {
+    $(id).addEventListener('input',event=>{pickerHSV[key]=Number(event.target.value);updatePicker();$('color-keyboard-value').textContent=`${key==='s'?'Saturation':key==='v'?'Value':'Hue'} ${Math.round(pickerHSV[key])}${key==='h'?'°':'%'}`;});
+    $(id).addEventListener('focus',()=>{$('color-keyboard-value').textContent=`${key==='s'?'Saturation':key==='v'?'Value':'Hue'} ${Math.round(pickerHSV[key])}${key==='h'?'°':'%'}`;});
+  }
+  $('color-plane').addEventListener('pointerdown',event=>{
+    if(event.button!==0||$('lighting-controls').disabled)return;
+    event.preventDefault();colorPointer=event.pointerId;
+    $('color-plane').setPointerCapture(event.pointerId);pickPosition(event);
+  });
+  $('color-plane').addEventListener('pointermove',event=>{if(colorPointer===event.pointerId)pickPosition(event);});
+  for(const name of ['pointerup','pointercancel','lostpointercapture'])$('color-plane').addEventListener(name,()=>{colorPointer=null;});
   $('lighting-color').addEventListener('input',event=>{channel().lighting.color=event.target.value;dirtyChanged();renderLighting();});
   $('lighting-brightness').addEventListener('input',event=>{channel().lighting.brightness=Number(event.target.value);dirtyChanged();renderLighting();});
   $('point-table').addEventListener('change',event=>{const el=event.target;if(el.dataset.pointTemp!==undefined||el.dataset.pointDuty!==undefined){const index=Number(el.dataset.pointTemp??el.dataset.pointDuty);const p=channel().curve[index],value=Number(el.value);if(el.value!==''&&finite(value))setPoint(index,el.dataset.pointTemp!==undefined?value:p.temp,el.dataset.pointDuty!==undefined?value:p.duty);renderPointTable();renderGraph();}});

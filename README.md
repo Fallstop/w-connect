@@ -12,7 +12,7 @@ A small, local controller for **Lian Li UNI FAN hubs**, on Linux and Windows. Na
 - Quiet, balanced and performance presets; fixed speed and full-speed override.
 - Hardware static color, breathing, rainbow, brightness and lights off. Existing lighting is preserved until changed. Applying lighting disables motherboard lighting sync and merged lighting globally.
 - Light/dark/system appearance, reduced motion, configurable control interval, and profile import/export.
-- Stable animations and keyboard focus, undo, exact hex colors, and saved-versus-applied feedback.
+- Stable animations and keyboard focus, undo, inline color picker with hue and saturation/value controls, exact hex colors, and saved-versus-applied feedback.
 - Native lighting runs on the controller after the app exits while powered; saved profiles restore at startup. Permanent storage across power loss is unverified.
 - Saved configuration, automatic reconnection, desktop launcher and background startup.
 - Cooling continues when you close the page. UI changes are staged until **Save changes**.

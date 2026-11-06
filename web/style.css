@@ -2518,7 +2518,7 @@ input[type="number"] {
   animation-delay: var(--phase, 0s);
 }
 .lighting-preview.is-breathing .led-motion {
-  animation: led-breath 11s ease-in-out infinite;
+  animation: led-breath 7s ease-in-out infinite;
 }
 .lighting-preview.is-off .led-output,
 .lighting-preview.is-preserve .led-output {
@@ -2532,9 +2532,104 @@ input[type="number"] {
 @keyframes led-breath {
   0%,
   100% {
-    opacity: 0.08;
+    opacity: 0;
   }
   50% {
     opacity: 1;
   }
+}
+
+/* The colour field stays in the panel, including on touch screens. */
+.color-picker {
+  grid-column: 1 / -1;
+  margin: 0 0 16px;
+}
+.color-plane {
+  position: relative;
+  height: 148px;
+  border-radius: 7px;
+  margin: 0 7px 12px;
+  touch-action: none;
+  cursor: crosshair;
+  background:
+    linear-gradient(to top, #000, transparent),
+    linear-gradient(to right, #fff, transparent), var(--picker-hue, red);
+}
+#color-cursor {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 2px solid white;
+  box-shadow: 0 0 0 1px #0009;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.color-plane:focus-within {
+  outline: 2px solid var(--ink);
+  outline-offset: 4px;
+}
+#color-keyboard-value {
+  display: none;
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  background: #161619;
+  color: white;
+  padding: 4px 7px;
+  border-radius: 4px;
+  font: 11px var(--mono);
+}
+.color-plane:focus-within #color-keyboard-value {
+  display: block;
+}
+#color-hue {
+  display: block;
+  width: calc(100% - 14px);
+  margin: 0 7px;
+  height: 20px;
+  background: transparent;
+}
+#color-hue::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 8px;
+  background: linear-gradient(
+    to right,
+    #f00,
+    #ff0,
+    #0f0,
+    #0ff,
+    #00f,
+    #f0f,
+    #f00
+  );
+}
+#color-hue::-moz-range-track {
+  height: 8px;
+  border-radius: 8px;
+  background: linear-gradient(
+    to right,
+    #f00,
+    #ff0,
+    #0f0,
+    #0ff,
+    #00f,
+    #f0f,
+    #f00
+  );
+}
+#color-hue::-webkit-slider-thumb {
+  width: 14px;
+  height: 14px;
+  margin-top: -3px;
+  border: 2px solid white;
+  background: #444;
+  box-shadow: 0 0 0 1px #0009;
+}
+#color-hue::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: 2px solid white;
+  background: #444;
+  box-shadow: 0 0 0 1px #0009;
 }

@@ -16,7 +16,7 @@ Host: Manjaro Linux x86_64; UNI FAN SL v1.8, USB `0cf2:a100`, interface1. CPU te
 ## Automated validation
 
 - Eighteen Rust unit tests (current source): packet encoding and channel selection, descriptor matching, RPM parsing/rejection, RBG lighting, fan-count limits, thermal override/missing sensors/stale data, ramp-down, interpolation, configuration validation and origin protection.
-- Fifteen DOM behavior tests (current source): real/stale telemetry, draft preservation, save headers, emergency/resume, curve constraints, demo mode, unsupported lighting, critical-temperature notices.
+- Sixteen DOM behavior tests (current source): real/stale telemetry, draft preservation, save headers, emergency/resume, curve constraints, demo mode, unsupported lighting, critical-temperature notices.
 - Rust formatting, Clippy with warnings denied, JavaScript syntax and release build.
 - Review by separate agents cross-checked protocol against vendor decompilation and prior art, then examined control-loop safety and installers.
 
@@ -35,6 +35,14 @@ SL v1 `0cf2:a100` was tested again with native breathing on the top bank while t
 Restarting the service loaded and applied the saved breathing profile. The original rainbow profile was then restored and confirmed identical to the pre-test configuration. The populated banks read approximately 1800/1770 RPM afterward; clean stop had requested full cooling. Camera footage and credentials remain private and excluded from source/distribution.
 
 No system shutdown, SATA-power removal or firmware flash was performed. Controller persistence after complete power removal remains unverified; no nonvolatile-save command was found. See [controller-memory evidence](protocol.md#controller-memory-and-application-exit).
+
+## Colour picker and camera checks (2026-11-07)
+
+The inline hue/saturation/value picker was tested with pointer dragging outside the field, touch input at desktop and mobile widths, native keyboard controls, exact hex values, and transitions through black and white without losing the chosen hue. Edits remain drafts until Save. Browser checks found no A/AA violations across the three views in both themes, no horizontal overflow at 360–1440px, and no JavaScript errors. Lighting screenshots include the picker.
+
+The camera was used for repeated native red, green, blue, purple, static, and breathing checks, including a 24-second rainbow-to-green-breathing transition. Primary colour selections changed the actual strips; green breathing remained green across repeated cycles after rainbow. The saved purple (`#613583`) looked pale and uneven between strips on camera, but did not cycle through rainbow hues in these captures. This does **not** establish a calibrated match between the screen and LEDs or resolve every reported colour mismatch. No speculative colour correction or transport change was shipped. The preview breathing period was adjusted to approximately seven seconds with a fully dark minimum, matching these captures more closely.
+
+A temporary batch-upload experiment did not improve the purple appearance and was removed. The original saved profile and cooling settings were restored after testing. Camera recordings, URLs and configuration backups remain private in ignored runtime files.
 
 ## Windows
 
